@@ -9,23 +9,40 @@ import './App.css'
 
 const STEPS = ['Subir archivo', 'Mapear columnas', 'Horarios', 'Resultados', 'Exportar']
 
+function norm(s) { return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') }
+
+function cruzarVentasConTiendas(ventasRaw, tiendas) {
+  const result = {}
+  const noMatch = []
+  for (const [nombreExcel, total] of Object.entries(ventasRaw)) {
+    const tienda = tiendas.find(t => norm(t.nombre) === norm(nombreExcel))
+    if (tienda) {
+      result[tienda.id] = { nombre: tienda.nombre, total }
+    } else {
+      noMatch.push(nombreExcel)
+    }
+  }
+  return { ventasPorId: result, noMatch }
+}
+
 export default function App() {
-  const [step, setStep]             = useState(0)
-  const [mes, setMes]               = useState(() => {
+  const [step, setStep] = useState(0)
+  const [mes, setMes] = useState(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
-  const [config, setConfig]         = useState(null)
-  const [mapping, setMapping]       = useState(null)
+  const [config, setConfig] = useState(null)
+  const [mapping, setMapping] = useState(null)
   const [savedMapping, setSavedMapping] = useState(null)
-  const [rawRows, setRawRows]       = useState([])
-  const [columns, setColumns]       = useState([])
-  const [fileName, setFileName]     = useState('')
-  const [ventasTienda, setVentasTienda] = useState({})
-  const [horarios, setHorarios]     = useState([])
+  const [rawRows, setRawRows] = useState([])
+  const [columns, setColumns] = useState([])
+  const [fileName, setFileName] = useState('')
+  const [ventasPorId, setVentasPorId] = useState({})
+  const [noMatchTiendas, setNoMatchTiendas] = useState([])
+  const [horarios, setHorarios] = useState([])
   const [resultados, setResultados] = useState(null)
-  const [loading, setLoading]       = useState(false)
-  const [error, setError]           = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     async function init() {
@@ -50,7 +67,7 @@ export default function App() {
         const wb = XLSX.read(e.target.result, { type: 'array' })
         const ws = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
-        if (!rows.length) { setError('El archivo está vacío.'); return }
+        if (!rows.length) { setError('El archivo esta vacio.'); return }
         setRawRows(rows)
         setColumns(Object.keys(rows[0]))
         if (savedMapping) {
@@ -62,7 +79,7 @@ export default function App() {
           goStep(1)
         }
       } catch {
-        setError('No se pudo leer el archivo. Asegúrate de que sea .xlsx, .xls o .csv')
+        setError('No se pudo leer el archivo. Asegurate de que sea .xlsx, .xls o .csv')
       }
     }
     reader.readAsArrayBuffer(file)
@@ -71,10 +88,17 @@ export default function App() {
   async function procesarYContinuar(rows, map) {
     setLoading(true)
     try {
-      const ventas = procesarReporteRapifac(rows, map)
-      setVentasTienda(ventas)
       const cfg = config || await loadConfig()
-      await saveVentasMes(mes, ventas, cfg.tiendas)
+      const ventasRaw = procesarReporteRapifac(rows, map)
+      const { ventasPorId: vpi, noMatch } = cruzarVentasConTiendas(ventasRaw, cfg.tiendas)
+      setVentasPorId(vpi)
+      setNoMatchTiendas(noMatch)
+      for (const [tienda_id, { total }] of Object.entries(vpi)) {
+        await supabase.from('ventas_mes').upsert(
+          { mes, tienda_id: parseInt(tienda_id), total_ventas: total },
+          { onConflict: 'mes,tienda_id' }
+        )
+      }
       const horasAnt = await loadHorariosMesAnterior(mes)
       if (horasAnt.length) {
         setHorarios(horasAnt.map(h => ({
@@ -114,13 +138,9 @@ export default function App() {
   async function calcular() {
     setLoading(true)
     try {
-      const ventasMesById = {}
-      for (const tienda of config.tiendas) {
-        const match = Object.entries(ventasTienda).find(
-          ([n]) => n.trim().toLowerCase() === tienda.nombre.trim().toLowerCase()
-        )
-        if (match) ventasMesById[tienda.id] = match[1]
-      }
+      const ventasMesById = Object.fromEntries(
+        Object.entries(ventasPorId).map(([id, { total }]) => [id, total])
+      )
       const ventasAntById = {}
       for (const t of config.tiendas) ventasAntById[t.id] = t.venta_ant
 
@@ -182,65 +202,41 @@ export default function App() {
         </div>
         {savedMapping && <span className="saved-pill">Mapeo Rapifac guardado</span>}
       </div>
-
       <div className="steps-bar">
         {STEPS.map((s, i) => (
-          <div key={i}
-            className={`step-item ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`}
-            onClick={() => i < step && goStep(i)}
-          >
+          <div key={i} className={`step-item ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`} onClick={() => i < step && goStep(i)}>
             <div className="step-circle">{i < step ? '✓' : i + 1}</div>
             <div className="step-label">{s}</div>
           </div>
         ))}
       </div>
-
-      {error && (
-        <div className="error-bar">
-          {error}
-          <button onClick={() => setError('')}>×</button>
-        </div>
-      )}
+      {error && <div className="error-bar">{error}<button onClick={() => setError('')}>×</button></div>}
 
       {step === 0 && (
         <div className="panel">
           <div className="card">
             <h3>Reporte de ventas de Rapifac</h3>
             <p className="hint">En Rapifac: <strong>Reportes → Ventas por sucursal → mes → Exportar Excel</strong></p>
-            <div className="upload-zone"
-              onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]) }}
-              onDragOver={e => e.preventDefault()}
-              onClick={() => document.getElementById('fi').click()}
-            >
+            <div className="upload-zone" onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]) }} onDragOver={e => e.preventDefault()} onClick={() => document.getElementById('fi').click()}>
               <div className="upload-icon">↑</div>
               <div className="upload-title">Arrastra el Excel o haz clic para seleccionar</div>
               <div className="upload-sub">.xlsx · .xls · .csv</div>
-              <input id="fi" type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
-                onChange={e => handleFile(e.target.files[0])} />
+              <input id="fi" type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
             </div>
           </div>
-          {savedMapping && (
-            <div className="info-card purple">
-              Configuración de columnas guardada — el archivo se procesará automáticamente.
-            </div>
-          )}
+          {savedMapping && <div className="info-card purple">Configuracion de columnas guardada — el archivo se procesara automaticamente.</div>}
         </div>
       )}
 
       {step === 1 && (
         <div className="panel">
           <div className="card">
-            <div className="card-header">
-              <h3>Archivo cargado</h3>
-              <span className="file-pill">{fileName}</span>
-            </div>
+            <div className="card-header"><h3>Archivo cargado</h3><span className="file-pill">{fileName}</span></div>
             <p className="hint">Vista previa — primeras filas:</p>
             <div className="table-scroll">
               <table className="preview-table">
                 <thead><tr>{columns.map(c => <th key={c}>{c}</th>)}</tr></thead>
-                <tbody>{rawRows.slice(0, 3).map((r, i) => (
-                  <tr key={i}>{columns.map(c => <td key={c}>{String(r[c] ?? '')}</td>)}</tr>
-                ))}</tbody>
+                <tbody>{rawRows.slice(0, 3).map((r, i) => (<tr key={i}>{columns.map(c => <td key={c}>{String(r[c] ?? '')}</td>)}</tr>))}</tbody>
               </table>
             </div>
           </div>
@@ -249,28 +245,23 @@ export default function App() {
             <div className="mapper-grid">
               {[
                 { key: 'col_sucursal', label: 'Sucursal / tienda', req: true },
-                { key: 'col_total',    label: 'Monto total',        req: true },
-                { key: 'col_fecha',    label: 'Fecha',              req: true },
-                { key: 'col_cajero',   label: 'Cajero / vendedor',  req: false },
+                { key: 'col_total', label: 'Monto total', req: true },
+                { key: 'col_fecha', label: 'Fecha', req: true },
+                { key: 'col_cajero', label: 'Cajero / vendedor', req: false },
               ].map(({ key, label, req }) => (
                 <div key={key} className="map-item">
                   <label>{label} {req && <span className="req">*</span>}</label>
-                  <select value={mapping?.[key] || ''}
-                    onChange={e => setMapping(m => ({ ...m, [key]: e.target.value }))}>
+                  <select value={mapping?.[key] || ''} onChange={e => setMapping(m => ({ ...m, [key]: e.target.value }))}>
                     {!req && <option value="">— no disponible —</option>}
                     {columns.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               ))}
             </div>
-            <div className="info-card teal">
-              Esta configuración se guardará. El próximo mes solo subes el archivo.
-            </div>
+            <div className="info-card teal">Esta configuracion se guardara. El proximo mes solo subes el archivo.</div>
             <div className="card-footer">
               <span className="hint-small"><span className="req">*</span> Obligatorios</span>
-              <button className="btn primary" onClick={confirmarMapeo} disabled={loading}>
-                {loading ? 'Procesando...' : 'Guardar y continuar →'}
-              </button>
+              <button className="btn primary" onClick={confirmarMapeo} disabled={loading}>{loading ? 'Procesando...' : 'Guardar y continuar →'}</button>
             </div>
           </div>
         </div>
@@ -281,20 +272,24 @@ export default function App() {
           <div className="card">
             <div className="card-header">
               <h3>Ventas del mes — {mes}</h3>
-              <span className="saved-pill">✓ {Object.keys(ventasTienda).length} tiendas</span>
+              <span className="saved-pill">✓ {Object.keys(ventasPorId).length} tiendas</span>
             </div>
+            {noMatchTiendas.length > 0 && (
+              <div className="info-card amber" style={{marginBottom: 10}}>
+                ⚠ Estas tiendas del Excel no coinciden con Supabase: <strong>{noMatchTiendas.join(', ')}</strong>
+              </div>
+            )}
             <div className="ventas-summary">
-              {Object.entries(ventasTienda).map(([nombre, total]) => {
-                const ti = config.tiendas.find(t => t.nombre.toLowerCase() === nombre.toLowerCase())
-                const meta = ti ? ti.venta_ant * (1 + ti.crec_obj) : 0
+              {config.tiendas.map(tienda => {
+                const v = ventasPorId[tienda.id]
+                const total = v?.total || 0
+                const meta = tienda.venta_ant * (1 + tienda.crec_obj)
                 const p = meta > 0 ? total / meta : 0
                 return (
-                  <div key={nombre} className="tienda-chip">
-                    <div className="tienda-name">{nombre}</div>
+                  <div key={tienda.id} className="tienda-chip">
+                    <div className="tienda-name">{tienda.nombre}</div>
                     <div className="tienda-total">{fmt(total)}</div>
-                    <div className={`tienda-pct ${p >= 1 ? 'green' : p >= 0.8 ? 'amber' : 'red'}`}>
-                      {pct(p)}
-                    </div>
+                    <div className={`tienda-pct ${p >= 1 ? 'green' : p >= 0.8 ? 'amber' : total > 0 ? 'red' : ''}`}>{total > 0 ? pct(p) : '—'}</div>
                   </div>
                 )
               })}
@@ -302,47 +297,28 @@ export default function App() {
           </div>
           <div className="card">
             <h3>Horas por empleada</h3>
-            <p className="hint">Pre-cargado del mes anterior. Modifica lo que haya cambiado.</p>
+            <p className="hint">Ingresa las horas trabajadas en cada tienda este mes.</p>
             <div className="table-scroll">
               <table className="hours-table">
-                <thead>
-                  <tr>
-                    <th className="emp-col">Empleada</th>
-                    {config.tiendas.map(t => <th key={t.id} title={t.nombre}>{t.nombre.slice(0, 8)}</th>)}
-                    <th className="total-col">Total</th>
-                  </tr>
-                </thead>
+                <thead><tr><th className="emp-col">Empleada</th>{config.tiendas.map(t => <th key={t.id} title={t.nombre}>{t.nombre.slice(0, 8)}</th>)}<th className="total-col">Total</th></tr></thead>
                 <tbody>
                   {config.empleadas.map(emp => {
-                    const empH = config.tiendas.map(ti => {
-                      const h = horarios.find(r => r.empleada_id === emp.id && r.tienda_id === ti.id)
-                      return h?.horas || 0
-                    })
+                    const empH = config.tiendas.map(ti => { const h = horarios.find(r => r.empleada_id === emp.id && r.tienda_id === ti.id); return h?.horas || 0 })
                     const tot = empH.reduce((s, h) => s + h, 0)
                     return (
                       <tr key={emp.id}>
                         <td className="emp-name">{emp.nombre}</td>
                         {config.tiendas.map((ti, idx) => (
                           <td key={ti.id}>
-                            <input type="number" min="0" max="300" value={empH[idx]}
-                              className="hours-input"
+                            <input type="number" min="0" max="300" value={empH[idx]} className="hours-input"
                               onChange={e => {
                                 const val = parseFloat(e.target.value) || 0
                                 setHorarios(prev => {
-                                  const next = prev.filter(
-                                    r => !(r.empleada_id === emp.id && r.tienda_id === ti.id)
-                                  )
-                                  if (val > 0) next.push({
-                                    empleada_id: emp.id,
-                                    empleada_nombre: emp.nombre,
-                                    tienda_id: ti.id,
-                                    tienda_nombre: ti.nombre,
-                                    horas: val,
-                                  })
+                                  const next = prev.filter(r => !(r.empleada_id === emp.id && r.tienda_id === ti.id))
+                                  if (val > 0) next.push({ empleada_id: emp.id, empleada_nombre: emp.nombre, tienda_id: ti.id, tienda_nombre: ti.nombre, horas: val })
                                   return next
                                 })
-                              }}
-                            />
+                              }} />
                           </td>
                         ))}
                         <td className="total-h">{tot}</td>
@@ -354,9 +330,7 @@ export default function App() {
             </div>
             <div className="card-footer">
               <span className="hint-small">Puedes usar decimales (ej: 37.5)</span>
-              <button className="btn primary" onClick={calcular} disabled={loading}>
-                {loading ? 'Calculando...' : 'Calcular bonos →'}
-              </button>
+              <button className="btn primary" onClick={calcular} disabled={loading}>{loading ? 'Calculando...' : 'Calcular bonos →'}</button>
             </div>
           </div>
         </div>
@@ -370,12 +344,7 @@ export default function App() {
               { label: 'Empleadas', value: resultados.resultados.length },
               { label: 'Tiendas en meta', value: `${Object.values(resultados.storeResults).filter(s => s.pctMeta >= 1).length} / ${config.tiendas.length}` },
               { label: 'Cumpl. promedio', value: pct(Object.values(resultados.storeResults).reduce((s, r) => s + r.pctMeta, 0) / Math.max(config.tiendas.length, 1)) },
-            ].map(m => (
-              <div key={m.label} className="metric-card">
-                <div className="metric-label">{m.label}</div>
-                <div className="metric-value">{m.value}</div>
-              </div>
-            ))}
+            ].map(m => (<div key={m.label} className="metric-card"><div className="metric-label">{m.label}</div><div className="metric-value">{m.value}</div></div>))}
           </div>
           <div className="card">
             <h3>Ventas por tienda</h3>
@@ -390,9 +359,7 @@ export default function App() {
                       <td><span className={`badge ${pctMeta >= 1.05 ? 'green' : pctMeta >= 0.95 ? 'teal' : pctMeta >= 0.8 ? 'amber' : 'red'}`}>{pct(pctMeta)}</span></td>
                       <td className={pctYoy >= 0 ? 'text-green' : 'text-red'}>{pct(pctYoy)}</td>
                       <td>{fmt(poolGrp)}</td>
-                      <td><span className={`badge ${pctMeta >= 1.05 ? 'green' : pctMeta >= 0.95 ? 'teal' : pctMeta >= 0.8 ? 'amber' : 'red'}`}>
-                        {pctMeta >= 1.15 ? 'Exceeds' : pctMeta >= 1.05 ? 'Stretch' : pctMeta >= 0.95 ? 'On target' : pctMeta >= 0.8 ? 'Near' : 'Below'}
-                      </span></td>
+                      <td><span className={`badge ${pctMeta >= 1.05 ? 'green' : pctMeta >= 0.95 ? 'teal' : pctMeta >= 0.8 ? 'amber' : 'red'}`}>{pctMeta >= 1.15 ? 'Exceeds' : pctMeta >= 1.05 ? 'Stretch' : pctMeta >= 0.95 ? 'On target' : pctMeta >= 0.8 ? 'Near' : 'Below'}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -409,16 +376,11 @@ export default function App() {
                     <tr key={r.empleada_id}>
                       <td className="bold">{r.nombre}</td>
                       <td>{r.tiendas.map(t => <span key={t} className="pill">{t}</span>)}</td>
-                      <td>{fmt(r.bono_combinado)}</td>
-                      <td>{fmt(r.pool_grupal)}</td>
-                      <td>{fmt(r.bono_reviews)}</td>
+                      <td>{fmt(r.bono_combinado)}</td><td>{fmt(r.pool_grupal)}</td><td>{fmt(r.bono_reviews)}</td>
                       <td><strong className="total-bono">{fmt(r.total_bono)}</strong></td>
                     </tr>
                   ))}
-                  <tr className="total-row">
-                    <td colSpan={5}>TOTAL A PAGAR</td>
-                    <td><strong>{fmt(resultados.resultados.reduce((s, r) => s + r.total_bono, 0))}</strong></td>
-                  </tr>
+                  <tr className="total-row"><td colSpan={5}>TOTAL A PAGAR</td><td><strong>{fmt(resultados.resultados.reduce((s, r) => s + r.total_bono, 0))}</strong></td></tr>
                 </tbody>
               </table>
             </div>
@@ -437,25 +399,14 @@ export default function App() {
             <div className="export-options">
               <div className="export-item" onClick={exportarExcel}>
                 <div className="export-icon green">↓</div>
-                <div>
-                  <div className="export-title">Excel para RR.HH.</div>
-                  <div className="export-sub">Todas las empleadas · desglose completo · listo para procesar pago</div>
-                </div>
+                <div><div className="export-title">Excel para RR.HH.</div><div className="export-sub">Todas las empleadas · desglose completo · listo para procesar pago</div></div>
                 <span className="export-ext green">.xlsx</span>
               </div>
             </div>
-            <div className="success-banner">
-              <div className="success-dot" />
-              <div>
-                <div className="success-title">Resultados guardados en Supabase</div>
-                <div className="success-sub">Histórico disponible desde cualquier dispositivo</div>
-              </div>
-            </div>
+            <div className="success-banner"><div className="success-dot" /><div><div className="success-title">Resultados guardados en Supabase</div><div className="success-sub">Historico disponible desde cualquier dispositivo</div></div></div>
             <div className="card-footer">
-              <span className="hint-small purple">Mapeo guardado — el próximo mes solo sube el Excel</span>
-              <button className="btn" onClick={() => { setStep(0); setRawRows([]); setResultados(null); setVentasTienda({}) }}>
-                Nuevo mes
-              </button>
+              <span className="hint-small purple">Mapeo guardado — el proximo mes solo sube el Excel</span>
+              <button className="btn" onClick={() => { setStep(0); setRawRows([]); setResultados(null); setVentasPorId({}) }}>Nuevo mes</button>
             </div>
           </div>
         </div>
