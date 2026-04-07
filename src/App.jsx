@@ -16,11 +16,8 @@ function cruzarVentasConTiendas(ventasRaw, tiendas) {
   const noMatch = []
   for (const [nombreExcel, total] of Object.entries(ventasRaw)) {
     const tienda = tiendas.find(t => norm(t.nombre) === norm(nombreExcel))
-    if (tienda) {
-      result[tienda.id] = { nombre: tienda.nombre, total }
-    } else {
-      noMatch.push(nombreExcel)
-    }
+    if (tienda) { result[tienda.id] = { nombre: tienda.nombre, total } }
+    else { noMatch.push(nombreExcel) }
   }
   return { ventasPorId: result, noMatch }
 }
@@ -43,6 +40,9 @@ export default function App() {
   const [resultados, setResultados] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showConfig, setShowConfig] = useState(false)
+  const [configMsg, setConfigMsg] = useState('')
+  const [editingTiendas, setEditingTiendas] = useState([])
 
   useEffect(() => {
     async function init() {
@@ -51,12 +51,41 @@ export default function App() {
         setConfig(cfg)
         const m = await loadColumnMapping()
         if (m) setSavedMapping(m)
-      } catch (e) {
-        setError('Error al conectar con Supabase. Verifica las variables de entorno.')
-      }
+      } catch (e) { setError('Error al conectar con Supabase.') }
     }
     init()
   }, [])
+
+  function openConfig() {
+    setEditingTiendas(config?.tiendas?.map(t => ({ ...t })) || [])
+    setConfigMsg('')
+    setShowConfig(true)
+  }
+
+  async function resetMapping() {
+    try {
+      await supabase.from('column_mapping').delete().neq('id', 0)
+      setSavedMapping(null)
+      setMapping(null)
+      setRawRows([])
+      setVentasPorId({})
+      setStep(0)
+      setShowConfig(false)
+      setConfigMsg('')
+    } catch (e) { setConfigMsg('Error: ' + e.message) }
+  }
+
+  async function saveTiendas() {
+    try {
+      for (const t of editingTiendas) {
+        await supabase.from('tiendas').update({ nombre: t.nombre.trim() }).eq('id', t.id)
+      }
+      const cfg = await loadConfig()
+      setConfig(cfg)
+      setEditingTiendas(cfg.tiendas.map(t => ({ ...t })))
+      setConfigMsg('Nombres de tiendas actualizados.')
+    } catch (e) { setConfigMsg('Error: ' + e.message) }
+  }
 
   const handleFile = useCallback((file) => {
     if (!file) return
@@ -78,9 +107,7 @@ export default function App() {
           setMapping({ col_sucursal: cols[0], col_total: cols[0], col_fecha: cols[0], col_cajero: '' })
           goStep(1)
         }
-      } catch {
-        setError('No se pudo leer el archivo. Asegurate de que sea .xlsx, .xls o .csv')
-      }
+      } catch { setError('No se pudo leer el archivo.') }
     }
     reader.readAsArrayBuffer(file)
   }, [savedMapping])
@@ -102,25 +129,19 @@ export default function App() {
       const horasAnt = await loadHorariosMesAnterior(mes)
       if (horasAnt.length) {
         setHorarios(horasAnt.map(h => ({
-          empleada_id: h.empleada_id,
-          empleada_nombre: h.empleadas?.nombre || '',
-          tienda_id: h.tienda_id,
-          tienda_nombre: h.tiendas?.nombre || '',
-          horas: h.horas,
+          empleada_id: h.empleada_id, empleada_nombre: h.empleadas?.nombre || '',
+          tienda_id: h.tienda_id, tienda_nombre: h.tiendas?.nombre || '', horas: h.horas,
         })))
       } else {
         const filas = []
-        for (const emp of cfg.empleadas) {
-          for (const ti of cfg.tiendas) {
+        for (const emp of cfg.empleadas)
+          for (const ti of cfg.tiendas)
             filas.push({ empleada_id: emp.id, empleada_nombre: emp.nombre, tienda_id: ti.id, tienda_nombre: ti.nombre, horas: 0 })
-          }
-        }
         setHorarios(filas)
       }
       goStep(2)
-    } catch (e) {
-      setError('Error al procesar el archivo: ' + e.message)
-    } finally { setLoading(false) }
+    } catch (e) { setError('Error al procesar: ' + e.message) }
+    finally { setLoading(false) }
   }
 
   async function confirmarMapeo() {
@@ -129,51 +150,38 @@ export default function App() {
       await saveColumnMapping(mapping)
       setSavedMapping(mapping)
       await procesarYContinuar(rawRows, mapping)
-    } catch (e) {
-      setError('Error al guardar el mapeo.')
-      setLoading(false)
-    }
+    } catch (e) { setError('Error al guardar el mapeo.'); setLoading(false) }
   }
 
   async function calcular() {
     setLoading(true)
     try {
-      const ventasMesById = Object.fromEntries(
-        Object.entries(ventasPorId).map(([id, { total }]) => [id, total])
-      )
+      const ventasMesById = Object.fromEntries(Object.entries(ventasPorId).map(([id, { total }]) => [id, total]))
       const ventasAntById = {}
       for (const t of config.tiendas) ventasAntById[t.id] = t.venta_ant
-
       const reviewsById = {}
       const { data: revData } = await supabase.from('reviews').select('*').eq('mes', mes)
       if (revData) for (const r of revData) reviewsById[r.tienda_id] = r.score
-
       const { resultados: res, storeResults } = calcularBonos({
         tiendas: config.tiendas, tiersM: config.tiersM, tiersY: config.tiersY,
         params: config.params, empleadas: config.empleadas,
-        ventasMes: ventasMesById, ventasAnt: ventasAntById,
-        horarios, reviews: reviewsById,
+        ventasMes: ventasMesById, ventasAnt: ventasAntById, horarios, reviews: reviewsById,
       })
       setResultados({ resultados: res, storeResults })
       await saveHorarios(mes, horarios)
       await saveResultados(mes, res)
       goStep(3)
-    } catch (e) {
-      setError('Error al calcular bonos: ' + e.message)
-    } finally { setLoading(false) }
+    } catch (e) { setError('Error al calcular: ' + e.message) }
+    finally { setLoading(false) }
   }
 
   function exportarExcel() {
     if (!resultados) return
     const data = resultados.resultados.map(r => ({
-      'Empleada': r.nombre,
-      'Tiendas': r.tiendas.join(', '),
-      'Bono Meta (S/)': r.bono_meta,
-      'Bono YoY (S/)': r.bono_yoy,
-      'Bono Combinado (S/)': r.bono_combinado,
-      'Pool Grupal (S/)': r.pool_grupal,
-      'Bono Reviews (S/)': r.bono_reviews,
-      'TOTAL BONO (S/)': r.total_bono,
+      'Empleada': r.nombre, 'Tiendas': r.tiendas.join(', '),
+      'Bono Meta (S/)': r.bono_meta, 'Bono YoY (S/)': r.bono_yoy,
+      'Bono Combinado (S/)': r.bono_combinado, 'Pool Grupal (S/)': r.pool_grupal,
+      'Bono Reviews (S/)': r.bono_reviews, 'TOTAL BONO (S/)': r.total_bono,
     }))
     const ws = XLSX.utils.json_to_sheet(data)
     const wb = XLSX.utils.book_new()
@@ -186,10 +194,7 @@ export default function App() {
   const pct = (n) => `${Math.round((n || 0) * 100)}%`
 
   if (!config) return (
-    <div className="loading-screen">
-      <div className="spinner" />
-      <p>{error || 'Conectando...'}</p>
-    </div>
+    <div className="loading-screen"><div className="spinner" /><p>{error || 'Conectando...'}</p></div>
   )
 
   return (
@@ -200,8 +205,59 @@ export default function App() {
           <span className="topbar-sep">·</span>
           <input type="month" value={mes} onChange={e => setMes(e.target.value)} className="month-input" />
         </div>
-        {savedMapping && <span className="saved-pill">Mapeo Rapifac guardado</span>}
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          {savedMapping && <span className="saved-pill">Mapeo guardado</span>}
+          <button onClick={openConfig} style={{background:'rgba(255,255,255,0.18)',border:'none',borderRadius:6,color:'#fff',fontSize:11,padding:'4px 12px',cursor:'pointer'}}>
+            ⚙ Config
+          </button>
+        </div>
       </div>
+
+      {/* PANEL CONFIG */}
+      {showConfig && (
+        <div style={{background:'#1e1b4b',border:'1px solid #534AB7',borderRadius:10,padding:'1rem 1.25rem',marginBottom:'1rem'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <span style={{color:'#fff',fontWeight:600,fontSize:14}}>⚙ Configuracion</span>
+            <button onClick={() => setShowConfig(false)} style={{background:'none',border:'none',color:'#aaa',fontSize:20,cursor:'pointer'}}>×</button>
+          </div>
+
+          {/* Mapeo */}
+          <div style={{marginBottom:16,paddingBottom:16,borderBottom:'1px solid rgba(255,255,255,0.1)'}}>
+            <div style={{color:'#ccc',fontSize:12,marginBottom:8}}>
+              <strong style={{color:'#fff',display:'block',marginBottom:4}}>Mapeo de columnas Rapifac</strong>
+              {savedMapping
+                ? <span style={{color:'#9FE1CB'}}>Guardado — Sucursal: <b>{savedMapping.col_sucursal}</b> · Total: <b>{savedMapping.col_total}</b> · Fecha: <b>{savedMapping.col_fecha}</b></span>
+                : <span style={{color:'#F09595'}}>Sin mapeo guardado — se pedira al subir el Excel</span>}
+            </div>
+            {savedMapping && (
+              <button onClick={resetMapping}
+                style={{background:'#7f1d1d',border:'none',borderRadius:6,color:'#fca5a5',fontSize:12,padding:'6px 14px',cursor:'pointer'}}>
+                🗑 Resetear mapeo (volver a configurar columnas)
+              </button>
+            )}
+          </div>
+
+          {/* Nombres tiendas */}
+          <div>
+            <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:8}}>Nombres de tiendas en Supabase</strong>
+            <p style={{color:'#aaa',fontSize:11,marginBottom:10}}>Estos nombres deben coincidir EXACTAMENTE con la columna Sucursal de tu Excel de Rapifac.</p>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
+              {editingTiendas.map((t, i) => (
+                <input key={t.id} value={t.nombre}
+                  onChange={e => setEditingTiendas(prev => prev.map((x, j) => j === i ? {...x, nombre: e.target.value} : x))}
+                  style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:6,color:'#fff',fontSize:12,padding:'5px 8px'}} />
+              ))}
+            </div>
+            <button onClick={saveTiendas}
+              style={{background:'#534AB7',border:'none',borderRadius:6,color:'#fff',fontSize:12,padding:'6px 16px',cursor:'pointer'}}>
+              Guardar nombres de tiendas
+            </button>
+          </div>
+
+          {configMsg && <div style={{marginTop:10,padding:'8px 12px',background:'rgba(159,225,203,0.15)',borderRadius:6,color:'#9FE1CB',fontSize:12}}>{configMsg}</div>}
+        </div>
+      )}
+
       <div className="steps-bar">
         {STEPS.map((s, i) => (
           <div key={i} className={`step-item ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`} onClick={() => i < step && goStep(i)}>
@@ -210,6 +266,7 @@ export default function App() {
           </div>
         ))}
       </div>
+
       {error && <div className="error-bar">{error}<button onClick={() => setError('')}>×</button></div>}
 
       {step === 0 && (
@@ -224,7 +281,9 @@ export default function App() {
               <input id="fi" type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
             </div>
           </div>
-          {savedMapping && <div className="info-card purple">Configuracion de columnas guardada — el archivo se procesara automaticamente.</div>}
+          {savedMapping
+            ? <div className="info-card purple">Mapeo guardado — Sucursal: <b>{savedMapping.col_sucursal}</b> · el archivo se procesara automaticamente. Para cambiar columnas usa ⚙ Config → Resetear mapeo.</div>
+            : <div className="info-card teal">Primera vez: sube el Excel y te pedira mapear las columnas una sola vez.</div>}
         </div>
       )}
 
@@ -275,8 +334,9 @@ export default function App() {
               <span className="saved-pill">✓ {Object.keys(ventasPorId).length} tiendas</span>
             </div>
             {noMatchTiendas.length > 0 && (
-              <div className="info-card amber" style={{marginBottom: 10}}>
-                ⚠ Estas tiendas del Excel no coinciden con Supabase: <strong>{noMatchTiendas.join(', ')}</strong>
+              <div className="info-card amber" style={{marginBottom:10}}>
+                ⚠ Tiendas del Excel sin coincidencia en Supabase: <strong>{noMatchTiendas.join(', ')}</strong><br/>
+                <span style={{fontSize:11}}>Usa ⚙ Config → edita los nombres de tiendas para que coincidan exactamente.</span>
               </div>
             )}
             <div className="ventas-summary">
@@ -300,7 +360,7 @@ export default function App() {
             <p className="hint">Ingresa las horas trabajadas en cada tienda este mes.</p>
             <div className="table-scroll">
               <table className="hours-table">
-                <thead><tr><th className="emp-col">Empleada</th>{config.tiendas.map(t => <th key={t.id} title={t.nombre}>{t.nombre.slice(0, 8)}</th>)}<th className="total-col">Total</th></tr></thead>
+                <thead><tr><th className="emp-col">Empleada</th>{config.tiendas.map(t => <th key={t.id} title={t.nombre}>{t.nombre.slice(0,8)}</th>)}<th className="total-col">Total</th></tr></thead>
                 <tbody>
                   {config.empleadas.map(emp => {
                     const empH = config.tiendas.map(ti => { const h = horarios.find(r => r.empleada_id === emp.id && r.tienda_id === ti.id); return h?.horas || 0 })
@@ -356,10 +416,10 @@ export default function App() {
                     <tr key={tienda.id}>
                       <td className="bold">{tienda.nombre}</td>
                       <td>{fmt(meta)}</td><td>{fmt(actual)}</td>
-                      <td><span className={`badge ${pctMeta >= 1.05 ? 'green' : pctMeta >= 0.95 ? 'teal' : pctMeta >= 0.8 ? 'amber' : 'red'}`}>{pct(pctMeta)}</span></td>
-                      <td className={pctYoy >= 0 ? 'text-green' : 'text-red'}>{pct(pctYoy)}</td>
+                      <td><span className={`badge ${pctMeta>=1.05?'green':pctMeta>=0.95?'teal':pctMeta>=0.8?'amber':'red'}`}>{pct(pctMeta)}</span></td>
+                      <td className={pctYoy>=0?'text-green':'text-red'}>{pct(pctYoy)}</td>
                       <td>{fmt(poolGrp)}</td>
-                      <td><span className={`badge ${pctMeta >= 1.05 ? 'green' : pctMeta >= 0.95 ? 'teal' : pctMeta >= 0.8 ? 'amber' : 'red'}`}>{pctMeta >= 1.15 ? 'Exceeds' : pctMeta >= 1.05 ? 'Stretch' : pctMeta >= 0.95 ? 'On target' : pctMeta >= 0.8 ? 'Near' : 'Below'}</span></td>
+                      <td><span className={`badge ${pctMeta>=1.05?'green':pctMeta>=0.95?'teal':pctMeta>=0.8?'amber':'red'}`}>{pctMeta>=1.15?'Exceeds':pctMeta>=1.05?'Stretch':pctMeta>=0.95?'On target':pctMeta>=0.8?'Near':'Below'}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -380,7 +440,7 @@ export default function App() {
                       <td><strong className="total-bono">{fmt(r.total_bono)}</strong></td>
                     </tr>
                   ))}
-                  <tr className="total-row"><td colSpan={5}>TOTAL A PAGAR</td><td><strong>{fmt(resultados.resultados.reduce((s, r) => s + r.total_bono, 0))}</strong></td></tr>
+                  <tr className="total-row"><td colSpan={5}>TOTAL A PAGAR</td><td><strong>{fmt(resultados.resultados.reduce((s,r) => s+r.total_bono, 0))}</strong></td></tr>
                 </tbody>
               </table>
             </div>
@@ -405,7 +465,7 @@ export default function App() {
             </div>
             <div className="success-banner"><div className="success-dot" /><div><div className="success-title">Resultados guardados en Supabase</div><div className="success-sub">Historico disponible desde cualquier dispositivo</div></div></div>
             <div className="card-footer">
-              <span className="hint-small purple">Mapeo guardado — el proximo mes solo sube el Excel</span>
+              <span className="hint-small purple">Proximo mes: solo sube el Excel</span>
               <button className="btn" onClick={() => { setStep(0); setRawRows([]); setResultados(null); setVentasPorId({}) }}>Nuevo mes</button>
             </div>
           </div>
