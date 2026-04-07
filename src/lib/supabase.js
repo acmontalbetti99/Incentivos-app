@@ -24,35 +24,39 @@ export async function loadConfig() {
 }
 
 export async function loadColumnMapping() {
-  const { data } = await supabase
-    .from('column_mapping').select('*')
-    .order('updated_at', { ascending: false }).limit(1).single()
-  return data
+  try {
+    const { data } = await supabase
+      .from('column_mapping').select('*')
+      .order('updated_at', { ascending: false }).limit(1).single()
+    return data
+  } catch { return null }
 }
 
 export async function saveColumnMapping(mapping) {
-  const { data: existing } = await supabase
-    .from('column_mapping').select('id').limit(1).single()
-  if (existing) {
-    await supabase.from('column_mapping')
-      .update({ ...mapping, updated_at: new Date().toISOString() })
-      .eq('id', existing.id)
-  } else {
+  try {
+    const { data: existing } = await supabase
+      .from('column_mapping').select('id').limit(1).single()
+    if (existing) {
+      await supabase.from('column_mapping')
+        .update({ ...mapping, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+    } else {
+      await supabase.from('column_mapping').insert(mapping)
+    }
+  } catch {
     await supabase.from('column_mapping').insert(mapping)
   }
 }
 
-export async function saveVentasMes(mes, ventasPorTienda, tiendas) {
-  for (const [nombre, total] of Object.entries(ventasPorTienda)) {
-    const tienda = tiendas.find(
-      t => t.nombre.trim().toLowerCase() === nombre.trim().toLowerCase()
-    )
-    if (!tienda) continue
-    await supabase.from('ventas_mes').upsert(
-      { mes, tienda_id: tienda.id, total_ventas: total },
-      { onConflict: 'mes,tienda_id' }
-    )
-  }
+// BATCH: una sola llamada
+export async function saveVentasMes(mes, ventasPorId) {
+  const rows = Object.entries(ventasPorId).map(([tienda_id, { total }]) => ({
+    mes,
+    tienda_id: parseInt(tienda_id),
+    total_ventas: total,
+  }))
+  if (!rows.length) return
+  await supabase.from('ventas_mes').upsert(rows, { onConflict: 'mes,tienda_id' })
 }
 
 export async function loadHorariosMesAnterior(mesActual) {
@@ -67,27 +71,33 @@ export async function loadHorariosMesAnterior(mesActual) {
   return data || []
 }
 
+// BATCH: delete + insert en 2 llamadas (antes eran 288)
 export async function saveHorarios(mes, rows) {
-  for (const r of rows) {
-    await supabase.from('horarios').upsert(
-      { mes, empleada_id: r.empleada_id, tienda_id: r.tienda_id, horas: r.horas },
-      { onConflict: 'mes,empleada_id,tienda_id' }
-    )
+  const toSave = rows
+    .filter(r => r.horas > 0)
+    .map(r => ({ mes, empleada_id: r.empleada_id, tienda_id: r.tienda_id, horas: r.horas }))
+  await supabase.from('horarios').delete().eq('mes', mes)
+  if (toSave.length > 0) {
+    await supabase.from('horarios').insert(toSave)
   }
 }
 
+// BATCH: delete + insert en 2 llamadas (antes eran 31)
 export async function saveResultados(mes, resultados) {
-  for (const r of resultados) {
-    await supabase.from('resultados').upsert({
-      mes,
-      empleada_id: r.empleada_id,
-      bono_meta: r.bono_meta,
-      bono_yoy: r.bono_yoy,
-      bono_combinado: r.bono_combinado,
-      pool_grupal: r.pool_grupal,
-      bono_reviews: r.bono_reviews,
-      total_bono: r.total_bono,
-      calculado_at: new Date().toISOString(),
-    }, { onConflict: 'mes,empleada_id' })
+  const now = new Date().toISOString()
+  const rows = resultados.map(r => ({
+    mes,
+    empleada_id: r.empleada_id,
+    bono_meta: r.bono_meta,
+    bono_yoy: r.bono_yoy,
+    bono_combinado: r.bono_combinado,
+    pool_grupal: r.pool_grupal,
+    bono_reviews: r.bono_reviews,
+    total_bono: r.total_bono,
+    calculado_at: now,
+  }))
+  await supabase.from('resultados').delete().eq('mes', mes)
+  if (rows.length > 0) {
+    await supabase.from('resultados').insert(rows)
   }
 }
