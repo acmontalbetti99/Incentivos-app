@@ -138,39 +138,78 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const wb = XLSX.read(e.target.result, { type:'array' })
-        const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('resumen') || n.toLowerCase().includes('mensual')) || wb.SheetNames[0]
-        const ws = wb.Sheets[sheetName]
-        const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
-        let headerRowIdx = -1
-        for (let i = 0; i < rawRows.length; i++) {
-          const cell = String(rawRows[i][0]||'').trim()
-          if (cell.toLowerCase().includes('colaborador') || cell.toLowerCase() === 'nombre') {
-            headerRowIdx = i; break
+
+        // Detect format: if sheets named "Dia 1"..."Dia 31" exist -> new multi-day format
+        const daySheets = wb.SheetNames.filter(n => /^Dia \d+$/i.test(n.trim()))
+        const isMultiDay = daySheets.length >= 28
+
+        if (isMultiDay) {
+          // NEW FORMAT: sum hours across all day sheets
+          const data = {}
+          for (const sheetName of daySheets) {
+            const ws = wb.Sheets[sheetName]
+            const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
+            // Find header row with "Colaborador"
+            let hdrIdx = -1
+            for (let i = 0; i < rawRows.length; i++) {
+              if (String(rawRows[i][0]||'').trim().toLowerCase().includes('colaborador')) { hdrIdx = i; break }
+            }
+            if (hdrIdx < 0) continue
+            const colNames = rawRows[hdrIdx].map(h => String(h||'').trim())
+            for (let i = hdrIdx + 1; i < rawRows.length; i++) {
+              const row = rawRows[i]
+              const nombre = String(row[0]||'').trim()
+              if (!nombre || nombre.toUpperCase().includes('TOTAL')) continue
+              if (!data[nombre]) data[nombre] = {}
+              for (let j = 1; j < colNames.length; j++) {
+                const colName = colNames[j]
+                if (!colName || colName.toUpperCase().includes('TOTAL')) continue
+                const h = parseFloat(row[j]) || 0
+                if (h > 0) data[nombre][colName] = (data[nombre][colName] || 0) + h
+              }
+            }
           }
-        }
-        if (headerRowIdx < 0) { setError('No se encontro fila de encabezado en horarios.'); return }
-        const headers = rawRows[headerRowIdx]
-        const colNames = headers.map(h => String(h||'').trim())
-        const data = {}
-        for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
-          const row = rawRows[i]
-          const nombre = String(row[0]||'').trim()
-          if (!nombre || nombre.toUpperCase().includes('TOTAL')) continue
-          data[nombre] = {}
-          for (let j = 1; j < colNames.length; j++) {
-            const colName = colNames[j]
-            if (!colName || colName.toUpperCase().includes('TOTAL')) continue
-            const h = parseFloat(row[j]) || 0
-            if (h > 0) data[nombre][colName] = h
+          // Remove colaboradoras with no hours at all
+          for (const k of Object.keys(data)) {
+            if (Object.keys(data[k]).length === 0) delete data[k]
           }
+          setHorariosData(data)
+          setError('')
+        } else {
+          // LEGACY FORMAT: single sheet with "Resumen Mensual" or similar
+          const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('resumen') || n.toLowerCase().includes('mensual')) || wb.SheetNames[0]
+          const ws = wb.Sheets[sheetName]
+          const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
+          let headerRowIdx = -1
+          for (let i = 0; i < rawRows.length; i++) {
+            const cell = String(rawRows[i][0]||'').trim()
+            if (cell.toLowerCase().includes('colaborador') || cell.toLowerCase() === 'nombre') {
+              headerRowIdx = i; break
+            }
+          }
+          if (headerRowIdx < 0) { setError('No se encontro fila de encabezado en horarios.'); return }
+          const headers = rawRows[headerRowIdx]
+          const colNames = headers.map(h => String(h||'').trim())
+          const data = {}
+          for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
+            const row = rawRows[i]
+            const nombre = String(row[0]||'').trim()
+            if (!nombre || nombre.toUpperCase().includes('TOTAL')) continue
+            data[nombre] = {}
+            for (let j = 1; j < colNames.length; j++) {
+              const colName = colNames[j]
+              if (!colName || colName.toUpperCase().includes('TOTAL')) continue
+              const h = parseFloat(row[j]) || 0
+              if (h > 0) data[nombre][colName] = h
+            }
+          }
+          setHorariosData(data)
+          setError('')
         }
-        setHorariosData(data)
-        setError('')
       } catch(err) { setError('Error al leer horarios: '+err.message) }
     }
     reader.readAsArrayBuffer(file)
   }
-
   function calcularBonosLocal() {
     if (!ventasData || !horariosData || !config) return null
     const tiendas = config.tiendas
