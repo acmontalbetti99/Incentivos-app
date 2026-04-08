@@ -144,6 +144,8 @@ export default function App() {
             if (h > 0) data[nombre][col] = h
           }
         }
+        console.log('DEBUG horariosData keys:', Object.keys(data).slice(0,5))
+        console.log('DEBUG horariosData first entry:', JSON.stringify(Object.entries(data)[0]))
         setHorariosData(data)
         setError('')
       } catch(err) { setError('Error al leer horarios: '+err.message) }
@@ -200,6 +202,11 @@ export default function App() {
         params.metas_tienda = JSON.stringify(metas)
       }
 
+      console.log('DEBUG horarios count:', horarios.length)
+      console.log('DEBUG horarios sample:', JSON.stringify(horarios.slice(0,3)))
+      console.log('DEBUG horariosData keys:', Object.keys(horariosData).slice(0,5))
+      console.log('DEBUG empleadas names:', cfg.empleadas.map(e=>e.nombre).slice(0,5))
+      console.log('DEBUG ventasMes:', JSON.stringify(ventasMes))
       const resultado = calcularBonos({ tiendas: cfg.tiendas, empleadas: cfg.empleadas, horarios, ventasMes, params, reviews: {} })
       setResultados(resultado)
       await saveHorarios(mes, horarios)
