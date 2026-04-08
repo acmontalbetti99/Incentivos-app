@@ -79,25 +79,25 @@ export default function App() {
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
-        const wb = XLSX.read(e.target.result, { type:'array' })
+        const wb = XLSX.read(e.target.result, { type:'array', cellDates:true })
         const ws = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
-        // Find header row dynamically (has "TIENDAS" in any cell)
+        // Find header row with "TIENDAS" dynamically - handles blank first rows
         let colTienda=1, colVentas=6, colMeta=9, dataStartRow=1
         for (let i=0; i<rows.length; i++) {
-          const row=rows[i]
-          for (let j=0; j<(row||[]).length; j++) {
-            const v=String(row[j]||'').trim().toUpperCase()
-            if (v==='TIENDAS') {
+          const row=rows[i]||[]
+          for (let j=0; j<row.length; j++) {
+            if (String(row[j]||'').trim().toUpperCase()==='TIENDAS') {
               colTienda=j; dataStartRow=i+1
-              // Find last date col (ventas) and last meta col in same header row
+              let lastDate=-1, lastMeta=-1
               for (let k=j+1; k<row.length; k++) {
                 const cell=row[k]
-                if (cell instanceof Date || (typeof cell==='string' && cell.includes('Meta'))) {
-                  if (cell instanceof Date) colVentas=k
-                  if (typeof cell==='string' && cell.toLowerCase().includes('meta') && !cell.toLowerCase().includes('total')) colMeta=k
-                }
+                // cellDates:true makes date headers actual Date objects
+                if (cell instanceof Date) lastDate=k
+                if (typeof cell==='string' && cell.toLowerCase().includes('meta') && !cell.toLowerCase().includes('total')) lastMeta=k
               }
+              if (lastDate>=0) colVentas=lastDate
+              if (lastMeta>=0) colMeta=lastMeta
               break
             }
           }
@@ -110,18 +110,17 @@ export default function App() {
           if (!nombre || typeof nombre!=='string') continue
           const nombreU=nombre.trim().toUpperCase()
           if (['TIENDAS','TOTAL'].includes(nombreU)||nombreU.includes('META TO')||nombreU.includes('META EM')) continue
-          const ventaReal=parseFloat(row[colVentas])||0
-          const metaAbs=parseFloat(row[colMeta])||0
-          const ventaAnt=parseFloat(row[colTienda+4])||0
+          const ventaReal=typeof row[colVentas]==='number'?row[colVentas]:parseFloat(row[colVentas])||0
+          const metaAbs=typeof row[colMeta]==='number'?row[colMeta]:parseFloat(row[colMeta])||0
+          const ventaAnt=typeof row[colTienda+4]==='number'?row[colTienda+4]:parseFloat(row[colTienda+4])||0
           if (ventaReal>0||metaAbs>0||ventaAnt>0) data[nombreU]={ventaReal,metaAbs,ventaAnt,nombreOriginal:nombre.trim()}
         }
-        setVentasData(data); setError('')
-      } catch(err){setError('Error al leer ventas: '+err.message)}
+        setVentasData(data)
+        setError('')
+      } catch(err) { setError('Error al leer ventas: '+err.message) }
     }
     reader.readAsArrayBuffer(file)
   }
-
-  // ââ Parsear archivo de HORARIOS ââââââââââââââââââââââââââââââââââââââââââ
   function parsearHorarios(file) {
     setHorariosFile(file.name)
     const reader = new FileReader()
