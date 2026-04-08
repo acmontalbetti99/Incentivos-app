@@ -544,7 +544,7 @@ export default function App() {
           <div style={{display:'flex',justifyContent:'flex-end',gap:12,marginTop:8}}>
             <button className="btn" onClick={()=>setResultados(null)}>Nuevo mes</button>
             <button className="btn primary" onClick={exportarExcel}>Exportar Excel</button>
-          </div>
+        </div>
         </div>
       )}
     </div>
