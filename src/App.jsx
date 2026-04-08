@@ -470,8 +470,52 @@ export default function App() {
 
           {/* Tabla colaboradoras */}
           <div className="card">
+            <h3>Horas trabajadas por colaboradora</h3>
+            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>Horas del mes segun archivo de horarios. El bono individual se prorratea por horas en cada tienda.</div>
+            <div className="table-scroll">
+              <table className="res-table">
+                <thead>
+                  <tr>
+                    <th>Colaboradora</th>
+                    {Object.values(resultados.storeResults).sort((a,b)=>a.tienda.nombre.localeCompare(b.tienda.nombre)).map(sr=>(
+                      <th key={sr.tienda.id} style={{fontSize:9,textAlign:'center',padding:'4px 3px'}}>{sr.tienda.nombre.replace('San ','S.')}</th>
+                    ))}
+                    <th style={{color:'#818CF8',textAlign:'center'}}>Total h.</th>
+                    <th style={{color:'#818CF8',textAlign:'right'}}>Bono ind.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resultados.resultados.map(r=>{
+                    const sorted = Object.values(resultados.storeResults).sort((a,b)=>a.tienda.nombre.localeCompare(b.tienda.nombre))
+                    return (
+                      <tr key={r.empleada_id}>
+                        <td className="bold" style={{fontSize:11}}>{r.nombre}</td>
+                        {sorted.map(sr=>{
+                          const h = horariosData?.[r.nombre]?.[sr.tienda.nombre] || 0
+                          return <td key={sr.tienda.id} style={{textAlign:'center',fontSize:10,color:h>0?'#fff':'#374151'}}>{h>0?h:'—'}</td>
+                        })}
+                        <td style={{textAlign:'center',fontWeight:700,color:'#818CF8',fontSize:11}}>{r.horas_total}</td>
+                        <td style={{textAlign:'right',fontWeight:700,color:'#818CF8',fontSize:11}}>{fmt(r.bono_individual)}</td>
+                      </tr>
+                    )
+                  })}
+                  <tr className="total-row">
+                    <td style={{fontSize:10}}>TOTAL HORAS</td>
+                    {Object.values(resultados.storeResults).sort((a,b)=>a.tienda.nombre.localeCompare(b.tienda.nombre)).map(sr=>{
+                      const tot = resultados.resultados.reduce((s,r)=>s+(horariosData?.[r.nombre]?.[sr.tienda.nombre]||0),0)
+                      return <td key={sr.tienda.id} style={{textAlign:'center',fontSize:10}}>{tot||'—'}</td>
+                    })}
+                    <td style={{textAlign:'center',fontWeight:700}}>{resultados.resultados.reduce((s,r)=>s+r.horas_total,0)}</td>
+                    <td style={{textAlign:'right',fontWeight:700,color:'#818CF8'}}>{fmt(resultados.resultados.reduce((s,r)=>s+r.bono_individual,0))}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="card">
             <h3>Bonos por colaboradora</h3>
-            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>S/2,000 = <span style={{color:'#818CF8'}}>70% individual (S/1,400)</span> + <span style={{color:'#34D399'}}>30% empresa (S/600)</span>  proporcional a horas</div>
+            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>S/2,000 = <span style={{color:'#818CF8'}}>70% individual (S/1,400)</span> + <span style={{color:'#34D399'}}>30% empresa (S/600)</span> proporcional a horas</div>
             <div className="table-scroll">
               <table className="res-table">
                 <thead><tr><th>Colaboradora</th><th>Tiendas</th><th>Horas</th><th style={{color:'#818CF8'}}>Individual</th><th style={{color:'#34D399'}}>Empresa</th><th>TOTAL</th></tr></thead>
@@ -495,7 +539,7 @@ export default function App() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </div></div>
 
           <div style={{display:'flex',justifyContent:'flex-end',gap:12,marginTop:8}}>
             <button className="btn" onClick={()=>setResultados(null)}>Nuevo mes</button>
