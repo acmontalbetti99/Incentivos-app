@@ -539,7 +539,7 @@ export default function App() {
                 </tbody>
               </table>
             </div>
-          </div></div>
+          </div>
 
           <div style={{display:'flex',justifyContent:'flex-end',gap:12,marginTop:8}}>
             <button className="btn" onClick={()=>setResultados(null)}>Nuevo mes</button>
