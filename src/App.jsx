@@ -464,7 +464,7 @@ export default function App() {
                     return (
                       <tr key={t.id}>
                         <td className="bold">{t.nombre}</td>
-                        <td><span style={{fontSize:10,padding:'2px 7px',borderRadius:10,background:t.tipo==='grande'?'#1e3a5f':t.tipo==='mediana'?'#1a3a2a':'#3a1a1a',color:t.tipo==='grande'?'#93c5fd':t.tipo==='mediana'?'#86efac':'#fca5a5'}}>{t.tipo||'-'}</span></td>
+                        <td><span style={{fontSize:10,padding:'2px 7px',borderRadius:10,background:t.tipo==='grande'?'#dbeafe':t.tipo==='mediana'?'#dcfce7':'#fee2e2',color:t.tipo==='grande'?'#1e40af':t.tipo==='mediana'?'#15803d':'#b91c1c',fontWeight:600,letterSpacing:'0.02em'}}>{t.tipo||'-'}</span></td>
                         <td>{fmt(sr.ventaAnt)}</td>
                         <td>{fmt(sr.ventaReal)}</td>
                         <td><span className={`badge ${sr.crecPct>=CRECIMIENTO_MIN?'green':'red'}`}>{pctS(sr.crecPct)}</span></td>
