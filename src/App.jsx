@@ -23,7 +23,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
   return (
     <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'â':icon}</span>
+        <span style={{fontSize:28}}>{done?'[OK]':icon}</span>
         <div>
           <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#fff'}}>{title}</div>
           <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
@@ -31,7 +31,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
       </div>
       {hint && <div style={{fontSize:11,color:'#6B7280',marginBottom:10,fontStyle:'italic'}}>{hint}</div>}
       {done
-        ? <div style={{fontSize:12,color:'#86efac'}}>â {fileName}</div>
+        ? <div style={{fontSize:12,color:'#86efac'}}>[OK] {fileName}</div>
         : <label style={{background:'#4F46E5',color:'#fff',borderRadius:6,padding:'8px 18px',fontSize:12,cursor:'pointer',display:'inline-block'}}>
             Seleccionar archivo
             <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>{onFile(e.target.files[0]);e.target.value='';}}/>
@@ -263,7 +263,7 @@ export default function App() {
       <div className="topbar">
         <div className="topbar-left">
           <span className="topbar-title">Incentivos tiendas</span>
-          <span className="topbar-sep">Â·</span>
+          <span className="topbar-sep">·</span>
           <input type="month" value={mes} onChange={e=>setMes(e.target.value)} className="month-input"/>
         </div>
         <button onClick={openConfig} style={{background:'rgba(255,255,255,0.18)',border:'none',borderRadius:6,color:'#fff',fontSize:11,padding:'4px 14px',cursor:'pointer'}}>â Config</button>
@@ -430,11 +430,11 @@ export default function App() {
             <h3>Resultados por tienda</h3>
             <div className="table-scroll">
               <table className="res-table">
-                <thead><tr><th>Tienda</th><th>Tipo</th><th>Meta</th><th>Real</th><th>Cumpl.</th><th>Tier aplicado</th></tr></thead>
+                <thead><tr><th>Tienda</th><th>Tipo</th><th>Meta</th><th>Real</th><th>Cumpl.</th><th>Tier aplicado</th><th style={{color:'#818CF8'}}>Bono base</th></tr></thead>
                 <tbody>
                   {Object.values(resultados.storeResults).sort((a,b)=>a.tienda.nombre.localeCompare(b.tienda.nombre)).map(sr=>{
                     const isChica=sr.tipo==='chica'
-                    const tierLabel = sr.cumplimiento>=1.10?'â¥110% â 110%':sr.cumplimiento>=1.05?(isChica?'105-109% â 100%':'105-109% â 105%'):sr.cumplimiento>=1.00?(isChica?'100-104% â 80%':'100-104% â 100%'):sr.cumplimiento>=0.95?(isChica?'95-99% â 25%':'95-99% â 40%'):'<95% â Sin bono'
+                    const tierLabel = sr.cumplimiento>=1.10?'>=110% (110%)':sr.cumplimiento>=1.05?(isChica?'105-109% (100%)':'105-109% (105%)'):sr.cumplimiento>=1.00?(isChica?'100-104% (80%)':'100-104% (100%)'):sr.cumplimiento>=0.95?(isChica?'95-99% (25%)':'95-99% (40%)'):'<95% (0%)'
                     const bColor=sr.cumplimiento>=1?'green':sr.cumplimiento>=0.95?'teal':sr.cumplimiento>=0.8?'amber':'red'
                     return(
                       <tr key={sr.tienda.id}>
@@ -443,7 +443,7 @@ export default function App() {
                         <td>{fmt(sr.meta)}</td>
                         <td>{fmt(sr.ventaReal)}</td>
                         <td><span className={`badge ${bColor}`}>{pct(sr.cumplimiento)}</span></td>
-                        <td style={{fontSize:11,color:'#9CA3AF'}}>{tierLabel}</td>
+                        <td style={{fontSize:11,color:'#9CA3AF'}}>{tierLabel}</td><td style={{textAlign:'right',color:'#818CF8',fontWeight:600}}>{sr.tierPct>0?fmt(1400*sr.tierPct):'S/ 0'}</td>
                       </tr>
                     )
                   })}
