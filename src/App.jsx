@@ -279,7 +279,7 @@ export default function App() {
       <div className="topbar">
         <div className="topbar-left">
           <span className="topbar-title">Incentivos tiendas</span>
-          <span className="topbar-sep">·</span>
+          <span className="topbar-sep">&middot;</span>
           <input type="month" value={mes} onChange={e=>setMes(e.target.value)} className="month-input"/>
         </div>
         <button onClick={openConfig} style={{background:'rgba(255,255,255,0.18)',border:'none',borderRadius:6,color:'#fff',fontSize:11,padding:'4px 14px',cursor:'pointer'}}> Config</button>
