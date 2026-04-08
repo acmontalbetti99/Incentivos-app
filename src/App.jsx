@@ -545,7 +545,7 @@ export default function App() {
             <button className="btn" onClick={()=>setResultados(null)}>Nuevo mes</button>
             <button className="btn primary" onClick={exportarExcel}>Exportar Excel</button>
         </div>
-        </div>
+      </div>
       )}
     </div>
   )
