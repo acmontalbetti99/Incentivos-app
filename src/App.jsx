@@ -1,3 +1,4 @@
+// v3 - tipo badges fix
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, loadConfig, saveHorarios, saveResultados, saveVentasMes } from './lib/supabase'
