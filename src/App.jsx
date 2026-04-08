@@ -23,7 +23,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
   return (
     <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'✅':icon}</span>
+        <span style={{fontSize:28}}>{done?'â':icon}</span>
         <div>
           <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#fff'}}>{title}</div>
           <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
@@ -31,7 +31,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
       </div>
       {hint && <div style={{fontSize:11,color:'#6B7280',marginBottom:10,fontStyle:'italic'}}>{hint}</div>}
       {done
-        ? <div style={{fontSize:12,color:'#86efac'}}>✓ {fileName}</div>
+        ? <div style={{fontSize:12,color:'#86efac'}}>â {fileName}</div>
         : <label style={{background:'#4F46E5',color:'#fff',borderRadius:6,padding:'8px 18px',fontSize:12,cursor:'pointer',display:'inline-block'}}>
             Seleccionar archivo
             <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>{onFile(e.target.files[0]);e.target.value='';}}/>
@@ -73,7 +73,7 @@ export default function App() {
     setNewTienda(''); setNewEmpleada(''); setConfigMsg(''); setShowConfig(true)
   }
 
-  // ── Parsear archivo de VENTAS ────────────────────────────────────────────
+  // ââ Parsear archivo de VENTAS ââââââââââââââââââââââââââââââââââââââââââââ
   function parsearVentas(file) {
     setVentasFile(file.name)
     const reader = new FileReader()
@@ -82,31 +82,46 @@ export default function App() {
         const wb = XLSX.read(e.target.result, { type:'array' })
         const ws = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
-        const data = {}
-        // Format: col0=empty, col1=TIENDA, col2-5=meses anteriores, col6=mes actual ventas, col8=meta%obj, col9=meta absoluta
-        // Row 0=header, rows 1+ = tiendas hasta TOTAL
-        for (const row of rows) {
-          const nombre = row[1]
-          if (!nombre || typeof nombre !== 'string') continue
-          const nombreU = nombre.trim().toUpperCase()
-          if (nombreU === 'TIENDAS' || nombreU === 'TOTAL' || nombreU.includes('META TOTAL')) continue
-          
-          const ventaReal = parseFloat(row[6]) || 0   // col G = mes actual (mar 2026 o lo que sea)
-          const metaAbs   = parseFloat(row[9]) || 0   // col J = meta absoluta abril
-          const ventaAnt  = parseFloat(row[5]) || 0   // col F = mes anterior año actual (abr 2025)
-          
-          if (ventaReal > 0 || metaAbs > 0 || ventaAnt > 0) {
-            data[nombreU] = { ventaReal, metaAbs, ventaAnt, nombreOriginal: nombre.trim() }
+        // Find header row dynamically (has "TIENDAS" in any cell)
+        let colTienda=1, colVentas=6, colMeta=9, dataStartRow=1
+        for (let i=0; i<rows.length; i++) {
+          const row=rows[i]
+          for (let j=0; j<(row||[]).length; j++) {
+            const v=String(row[j]||'').trim().toUpperCase()
+            if (v==='TIENDAS') {
+              colTienda=j; dataStartRow=i+1
+              // Find last date col (ventas) and last meta col in same header row
+              for (let k=j+1; k<row.length; k++) {
+                const cell=row[k]
+                if (cell instanceof Date || (typeof cell==='string' && cell.includes('Meta'))) {
+                  if (cell instanceof Date) colVentas=k
+                  if (typeof cell==='string' && cell.toLowerCase().includes('meta') && !cell.toLowerCase().includes('total')) colMeta=k
+                }
+              }
+              break
+            }
           }
+          if (dataStartRow>1) break
         }
-        setVentasData(data)
-        setError('')
-      } catch(err) { setError('Error al leer ventas: '+err.message) }
+        const data={}
+        for (let i=dataStartRow; i<rows.length; i++) {
+          const row=rows[i]; if(!row) continue
+          const nombre=row[colTienda]
+          if (!nombre || typeof nombre!=='string') continue
+          const nombreU=nombre.trim().toUpperCase()
+          if (['TIENDAS','TOTAL'].includes(nombreU)||nombreU.includes('META TO')||nombreU.includes('META EM')) continue
+          const ventaReal=parseFloat(row[colVentas])||0
+          const metaAbs=parseFloat(row[colMeta])||0
+          const ventaAnt=parseFloat(row[colTienda+4])||0
+          if (ventaReal>0||metaAbs>0||ventaAnt>0) data[nombreU]={ventaReal,metaAbs,ventaAnt,nombreOriginal:nombre.trim()}
+        }
+        setVentasData(data); setError('')
+      } catch(err){setError('Error al leer ventas: '+err.message)}
     }
     reader.readAsArrayBuffer(file)
   }
 
-  // ── Parsear archivo de HORARIOS ──────────────────────────────────────────
+  // ââ Parsear archivo de HORARIOS ââââââââââââââââââââââââââââââââââââââââââ
   function parsearHorarios(file) {
     setHorariosFile(file.name)
     const reader = new FileReader()
@@ -137,7 +152,7 @@ export default function App() {
     reader.readAsArrayBuffer(file)
   }
 
-  // ── CALCULAR BONOS ────────────────────────────────────────────────────────
+  // ââ CALCULAR BONOS ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   async function calcular() {
     if (!ventasData || !horariosData) { setError('Sube los dos archivos primero.'); return }
     setLoading(true); setError('')
@@ -194,7 +209,7 @@ export default function App() {
     finally { setLoading(false) }
   }
 
-  // ── EXPORTAR ──────────────────────────────────────────────────────────────
+  // ââ EXPORTAR ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   function exportarExcel() {
     if (!resultados) return
     const data = resultados.resultados.map(r => ({
@@ -211,11 +226,11 @@ export default function App() {
     XLSX.writeFile(wb, `bonos_${mes}.xlsx`)
   }
 
-  // ── CONFIG CRUD ───────────────────────────────────────────────────────────
+  // ââ CONFIG CRUD âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   async function resetAndReload() { const cfg = await loadConfig(); setConfig(cfg); return cfg; }
   async function addTienda() {
     const n=newTienda.trim(); if(!n) return
-    try { await supabase.from('tiendas').insert({nombre:n,activa:true,venta_ant:80000,crec_obj:0.05}); const cfg=await resetAndReload(); setEditingTiendas(cfg.tiendas.map(t=>({...t}))); setNewTienda(''); setMsg('Local "'+n+'" añadido.') }
+    try { await supabase.from('tiendas').insert({nombre:n,activa:true,venta_ant:80000,crec_obj:0.05}); const cfg=await resetAndReload(); setEditingTiendas(cfg.tiendas.map(t=>({...t}))); setNewTienda(''); setMsg('Local "'+n+'" aÃ±adido.') }
     catch(e){setMsg('Error: '+e.message,false)}
   }
   async function deleteTienda(t) {
@@ -229,7 +244,7 @@ export default function App() {
   }
   async function addEmpleada() {
     const n=newEmpleada.trim(); if(!n) return
-    try { await supabase.from('empleadas').insert({nombre:n,activa:true}); const cfg=await resetAndReload(); setEditingEmpleadas(cfg.empleadas.map(e=>({...e}))); setNewEmpleada(''); setMsg('Colaboradora "'+n+'" añadida.') }
+    try { await supabase.from('empleadas').insert({nombre:n,activa:true}); const cfg=await resetAndReload(); setEditingEmpleadas(cfg.empleadas.map(e=>({...e}))); setNewEmpleada(''); setMsg('Colaboradora "'+n+'" aÃ±adida.') }
     catch(e){setMsg('Error: '+e.message,false)}
   }
   async function deleteEmpleada(emp) {
@@ -249,18 +264,18 @@ export default function App() {
       <div className="topbar">
         <div className="topbar-left">
           <span className="topbar-title">Incentivos tiendas</span>
-          <span className="topbar-sep">·</span>
+          <span className="topbar-sep">Â·</span>
           <input type="month" value={mes} onChange={e=>setMes(e.target.value)} className="month-input"/>
         </div>
-        <button onClick={openConfig} style={{background:'rgba(255,255,255,0.18)',border:'none',borderRadius:6,color:'#fff',fontSize:11,padding:'4px 14px',cursor:'pointer'}}>⚙ Config</button>
+        <button onClick={openConfig} style={{background:'rgba(255,255,255,0.18)',border:'none',borderRadius:6,color:'#fff',fontSize:11,padding:'4px 14px',cursor:'pointer'}}>â Config</button>
       </div>
 
       {/* CONFIG PANEL */}
       {showConfig && (
         <div style={S.configPanel}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-            <span style={{color:'#fff',fontWeight:600,fontSize:15}}>⚙ Configuracion</span>
-            <button onClick={()=>setShowConfig(false)} style={{background:'none',border:'none',color:'#aaa',fontSize:20,cursor:'pointer'}}>×</button>
+            <span style={{color:'#fff',fontWeight:600,fontSize:15}}>â Configuracion</span>
+            <button onClick={()=>setShowConfig(false)} style={{background:'none',border:'none',color:'#aaa',fontSize:20,cursor:'pointer'}}>Ã</button>
           </div>
           <div style={S.section}>
             <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:4}}>Locales ({editingTiendas.length})</strong>
@@ -269,7 +284,7 @@ export default function App() {
               {editingTiendas.map((t,i)=>(
                 <div key={t.id} style={{display:'flex',gap:4,alignItems:'center'}}>
                   <input value={t.nombre} style={{...S.input,flex:1}} onChange={e=>setEditingTiendas(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))}/>
-                  <button onClick={()=>deleteTienda(t)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'5px 8px',flexShrink:0}}>✕</button>
+                  <button onClick={()=>deleteTienda(t)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'5px 8px',flexShrink:0}}>â</button>
                 </div>
               ))}
             </div>
@@ -285,7 +300,7 @@ export default function App() {
               {editingEmpleadas.map((e)=>(
                 <div key={e.id} style={{display:'flex',gap:4,alignItems:'center'}}>
                   <span style={{color:'#ccc',fontSize:11,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.nombre}</span>
-                  <button onClick={()=>deleteEmpleada(e)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'3px 7px',flexShrink:0,fontSize:10}}>✕</button>
+                  <button onClick={()=>deleteEmpleada(e)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'3px 7px',flexShrink:0,fontSize:10}}>â</button>
                 </div>
               ))}
             </div>
@@ -298,40 +313,40 @@ export default function App() {
         </div>
       )}
 
-      {error && <div className="error-bar">{error}<button onClick={()=>setError('')}>×</button></div>}
+      {error && <div className="error-bar">{error}<button onClick={()=>setError('')}>Ã</button></div>}
 
       {/* UPLOAD SECTION */}
       <div className="panel">
         <div className="card">
-          <h3 style={{marginBottom:6}}>Subir archivos del mes — {mes}</h3>
-          <p className="hint">Sube los dos archivos para calcular los bonos automáticamente.</p>
+          <h3 style={{marginBottom:6}}>Subir archivos del mes â {mes}</h3>
+          <p className="hint">Sube los dos archivos para calcular los bonos automÃ¡ticamente.</p>
           <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
             <UploadCard
               title="1. Ventas mensual"
               subtitle="Archivo Excel de ventas por tienda"
-              hint="Columna B = tienda · Columna G = ventas del mes · Columna J = meta"
-              icon="📊"
+              hint="Columna B = tienda Â· Columna G = ventas del mes Â· Columna J = meta"
+              icon="ð"
               onFile={parsearVentas}
               fileName={ventasFile}
               done={!!ventasData}
-              status={ventasData ? `✓ ${Object.keys(ventasData).length} tiendas leídas` : ''}
+              status={ventasData ? `â ${Object.keys(ventasData).length} tiendas leÃ­das` : ''}
             />
             <UploadCard
               title="2. Horarios mensual"
               subtitle="Excel con horas por colaboradora y tienda"
-              hint="Hoja 'Resumen Mensual' · Columna A = colaboradora · Resto = tiendas"
-              icon="📋"
+              hint="Hoja 'Resumen Mensual' Â· Columna A = colaboradora Â· Resto = tiendas"
+              icon="ð"
               onFile={parsearHorarios}
               fileName={horariosFile}
               done={!!horariosData}
-              status={horariosData ? `✓ ${Object.keys(horariosData).length} colaboradoras leídas` : ''}
+              status={horariosData ? `â ${Object.keys(horariosData).length} colaboradoras leÃ­das` : ''}
             />
           </div>
 
-          {/* Preview de ventas si están cargadas */}
+          {/* Preview de ventas si estÃ¡n cargadas */}
           {ventasData && (
             <div style={{marginTop:16}}>
-              <div style={{fontSize:12,fontWeight:600,color:'#9FE1CB',marginBottom:8}}>Vista previa — ventas por tienda:</div>
+              <div style={{fontSize:12,fontWeight:600,color:'#9FE1CB',marginBottom:8}}>Vista previa â ventas por tienda:</div>
               <div className="ventas-summary">
                 {config.tiendas.map(tienda => {
                   const match = Object.keys(ventasData).find(k => norm(k) === norm(tienda.nombre))
@@ -343,7 +358,7 @@ export default function App() {
                     <div key={tienda.id} className="tienda-chip">
                       <div className="tienda-name">{tienda.nombre}</div>
                       <div className="tienda-total">{fmt(venta)}</div>
-                      <div className={`tienda-pct ${p>=1?'green':p>=0.8?'amber':venta>0?'red':''}`}>{venta>0?`${(p*100).toFixed(0)}%`:'—'}</div>
+                      <div className={`tienda-pct ${p>=1?'green':p>=0.8?'amber':venta>0?'red':''}`}>{venta>0?`${(p*100).toFixed(0)}%`:'â'}</div>
                     </div>
                   )
                 })}
@@ -356,8 +371,8 @@ export default function App() {
             const sinMatch = Object.keys(ventasData).filter(k => !config.tiendas.find(t => norm(t.nombre) === norm(k)))
             return sinMatch.length > 0 ? (
               <div className="info-card amber" style={{marginTop:10}}>
-                ⚠ Estas tiendas del Excel no coinciden con el sistema: <strong>{sinMatch.join(', ')}</strong><br/>
-                <span style={{fontSize:11}}>Usa ⚙ Config para ajustar los nombres.</span>
+                â  Estas tiendas del Excel no coinciden con el sistema: <strong>{sinMatch.join(', ')}</strong><br/>
+                <span style={{fontSize:11}}>Usa â Config para ajustar los nombres.</span>
               </div>
             ) : null
           })()}
@@ -366,17 +381,17 @@ export default function App() {
             const sinMatch = Object.keys(horariosData).filter(k => !config.empleadas.find(e => norm(e.nombre) === norm(k)))
             return sinMatch.length > 0 ? (
               <div className="info-card amber" style={{marginTop:8}}>
-                ⚠ Estas colaboradoras del Excel no coinciden: <strong>{sinMatch.join(', ')}</strong>
+                â  Estas colaboradoras del Excel no coinciden: <strong>{sinMatch.join(', ')}</strong>
               </div>
             ) : null
           })()}
 
-          {/* BOTÓN CALCULAR */}
+          {/* BOTÃN CALCULAR */}
           <div style={{marginTop:20,display:'flex',justifyContent:'flex-end'}}>
             <button className="btn primary" style={{fontSize:14,padding:'10px 28px'}}
               onClick={calcular}
               disabled={loading || !ventasData || !horariosData}>
-              {loading ? 'Calculando...' : (ventasData && horariosData ? '→ Calcular bonos' : 'Sube los dos archivos para continuar')}
+              {loading ? 'Calculando...' : (ventasData && horariosData ? 'â Calcular bonos' : 'Sube los dos archivos para continuar')}
             </button>
           </div>
         </div>
@@ -389,10 +404,10 @@ export default function App() {
           <div style={{background:resultados.empresaAlcanzo?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.12)',border:`1px solid ${resultados.empresaAlcanzo?'#16A34A':'#DC2626'}`,borderRadius:10,padding:'14px 18px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
             <div>
               <div style={{fontWeight:700,fontSize:14,color:resultados.empresaAlcanzo?'#86efac':'#fca5a5'}}>
-                {resultados.empresaAlcanzo?'✅ META EMPRESA ALCANZADA':'❌ Meta empresa no alcanzada'}
+                {resultados.empresaAlcanzo?'â META EMPRESA ALCANZADA':'â Meta empresa no alcanzada'}
               </div>
               <div style={{fontSize:12,color:'#ccc',marginTop:2}}>
-                Ventas totales: <b>{fmt(resultados.totalVentasEmpresa)}</b> · Meta: <b>{fmt(resultados.META_EMPRESA)}</b> · {pct(resultados.pctEmpresaLogrado)}
+                Ventas totales: <b>{fmt(resultados.totalVentasEmpresa)}</b> Â· Meta: <b>{fmt(resultados.META_EMPRESA)}</b> Â· {pct(resultados.pctEmpresaLogrado)}
               </div>
             </div>
             <div style={{textAlign:'right'}}>
@@ -401,12 +416,12 @@ export default function App() {
             </div>
           </div>
 
-          {/* Métricas */}
+          {/* MÃ©tricas */}
           <div className="metrics-row">
             {[
               {label:'Total bonos',value:fmt(resultados.resultados.reduce((s,r)=>s+r.total_bono,0))},
               {label:'Colaboradoras',value:resultados.resultados.length},
-              {label:'Tiendas ≥100%',value:`${Object.values(resultados.storeResults).filter(s=>s.cumplimiento>=1).length}/${config.tiendas.length}`},
+              {label:'Tiendas â¥100%',value:`${Object.values(resultados.storeResults).filter(s=>s.cumplimiento>=1).length}/${config.tiendas.length}`},
               {label:'Cumpl. promedio',value:pct(Object.values(resultados.storeResults).reduce((s,r)=>s+r.cumplimiento,0)/Math.max(config.tiendas.length,1))},
             ].map(m=><div key={m.label} className="metric-card"><div className="metric-label">{m.label}</div><div className="metric-value">{m.value}</div></div>)}
           </div>
@@ -420,7 +435,7 @@ export default function App() {
                 <tbody>
                   {Object.values(resultados.storeResults).sort((a,b)=>a.tienda.nombre.localeCompare(b.tienda.nombre)).map(sr=>{
                     const isChica=sr.tipo==='chica'
-                    const tierLabel = sr.cumplimiento>=1.10?'≥110% → 110%':sr.cumplimiento>=1.05?(isChica?'105-109% → 100%':'105-109% → 105%'):sr.cumplimiento>=1.00?(isChica?'100-104% → 80%':'100-104% → 100%'):sr.cumplimiento>=0.95?(isChica?'95-99% → 25%':'95-99% → 40%'):'<95% → Sin bono'
+                    const tierLabel = sr.cumplimiento>=1.10?'â¥110% â 110%':sr.cumplimiento>=1.05?(isChica?'105-109% â 100%':'105-109% â 105%'):sr.cumplimiento>=1.00?(isChica?'100-104% â 80%':'100-104% â 100%'):sr.cumplimiento>=0.95?(isChica?'95-99% â 25%':'95-99% â 40%'):'<95% â Sin bono'
                     const bColor=sr.cumplimiento>=1?'green':sr.cumplimiento>=0.95?'teal':sr.cumplimiento>=0.8?'amber':'red'
                     return(
                       <tr key={sr.tienda.id}>
@@ -441,7 +456,7 @@ export default function App() {
           {/* Tabla colaboradoras */}
           <div className="card">
             <h3>Bonos por colaboradora</h3>
-            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>S/2,000 = <span style={{color:'#818CF8'}}>70% individual (S/1,400)</span> + <span style={{color:'#34D399'}}>30% empresa (S/600)</span> · proporcional a horas</div>
+            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>S/2,000 = <span style={{color:'#818CF8'}}>70% individual (S/1,400)</span> + <span style={{color:'#34D399'}}>30% empresa (S/600)</span> Â· proporcional a horas</div>
             <div className="table-scroll">
               <table className="res-table">
                 <thead><tr><th>Colaboradora</th><th>Tiendas</th><th>Horas</th><th style={{color:'#818CF8'}}>Individual</th><th style={{color:'#34D399'}}>Empresa</th><th>TOTAL</th></tr></thead>
@@ -468,8 +483,8 @@ export default function App() {
           </div>
 
           <div style={{display:'flex',justifyContent:'flex-end',gap:12,marginTop:8}}>
-            <button className="btn" onClick={()=>setResultados(null)}>← Nuevo mes</button>
-            <button className="btn primary" onClick={exportarExcel}>↓ Exportar Excel</button>
+            <button className="btn" onClick={()=>setResultados(null)}>â Nuevo mes</button>
+            <button className="btn primary" onClick={exportarExcel}>â Exportar Excel</button>
           </div>
         </div>
       )}
