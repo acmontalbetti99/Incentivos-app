@@ -1,82 +1,100 @@
-function getBonusByPct(pct, tiers, field) {
-  const intPct = Math.round(pct * 100)
-  const tier = [...tiers].reverse().find(t => intPct >= t.desde_pct)
-  return tier ? (tier[field] || 0) : 0
+function norm(s) {
+  return String(s || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 }
-
+function parsearJSON(str, fallback) {
+  try { return JSON.parse(str) } catch { return fallback }
+}
+function getTierPct(cumplimiento, tipo, tiersGM, tiersCH) {
+  const tiers = tipo === 'chica' ? tiersCH : tiersGM
+  for (const t of tiers) {
+    if (cumplimiento >= t.min && cumplimiento <= t.max) return t.pct
+  }
+  return 0
+}
 export function procesarReporteRapifac(rows, mapping) {
   const { col_sucursal, col_total } = mapping
-  const ventasPorTienda = {}
+  const ventas = {}
   for (const row of rows) {
     const tienda = String(row[col_sucursal] || '').trim()
-    const total = parseFloat(
-      String(row[col_total] || '0').replace(/[^0-9.-]/g, '')
-    ) || 0
-    if (!tienda) continue
-    ventasPorTienda[tienda] = (ventasPorTienda[tienda] || 0) + total
+    const total = parseFloat(String(row[col_total] || '0').replace(/[^0-9.-]/g, '')) || 0
+    if (!tienda || total <= 0) continue
+    ventas[tienda] = (ventas[tienda] || 0) + total
   }
-  return ventasPorTienda
+  return ventas
 }
-
-export function calcularBonos({
-  tiendas, tiersM, tiersY, params, empleadas,
-  ventasMes, ventasAnt, horarios, reviews,
-}) {
-  const pesoMeta = parseFloat(params.peso_meta || 0.6)
-  const pesoYoy  = parseFloat(params.peso_yoy  || 0.4)
-  const pesoRev  = parseFloat(params.peso_reviews || 0.15)
-  const scoreMin = parseFloat(params.score_min || 4.2)
-  const scoreObj = parseFloat(params.score_obj || 4.7)
-  const usaRev   = (params.usar_reviews || 'SI') === 'SI'
-  const regla    = params.regla_multi || 'PRORRATEO'
-
+export function calcularBonos({ tiendas, empleadas, horarios, ventasMes, params, reviews = {} }) {
+  const BONO_TOTAL      = parseFloat(params.bono_total || 2000)
+  const PCT_IND         = parseFloat(params.pct_individual || 0.70)
+  const PCT_EMP         = parseFloat(params.pct_empresa || 0.30)
+  const META_EMPRESA    = parseFloat(params.meta_empresa_total || 915780)
+  const REVIEWS_BONUS   = parseFloat(params.reviews_bonus_pct || 0.10)
+  const REVIEWS_PENALTY = parseFloat(params.reviews_penalty_pct || 0.05)
+  const REVIEWS_MIN     = parseFloat(params.reviews_min_stars || 4)
+  const BONO_IND        = BONO_TOTAL * PCT_IND
+  const BONO_EMP        = BONO_TOTAL * PCT_EMP
+  const metasTienda = parsearJSON(params.metas_tienda, {})
+  const tiersGM     = parsearJSON(params.tiers_grande_mediana, [])
+  const tiersCH     = parsearJSON(params.tiers_chica, [])
   const storeResults = {}
+  let totalVentasEmpresa = 0
   for (const tienda of tiendas) {
-    const actual  = ventasMes[tienda.id] || 0
-    const meta    = tienda.venta_ant * (1 + tienda.crec_obj)
-    const antVal  = ventasAnt[tienda.id] || tienda.venta_ant
-    const pctMeta = meta > 0 ? actual / meta : 0
-    const pctYoy  = antVal > 0 ? (actual - antVal) / antVal : 0
-    const bonoMeta = getBonusByPct(pctMeta, tiersM, 'bono_ind')
-    const poolGrp  = getBonusByPct(pctMeta, tiersM, 'pool_grp')
-    const bonoYoy  = getBonusByPct(pctYoy,  tiersY, 'bono_adic')
-    const rev      = reviews[tienda.id]
-    const revScore = usaRev && rev
-      ? Math.max(0, Math.min(1, (rev - scoreMin) / Math.max(scoreObj - scoreMin, 0.01)))
-      : 0
-    storeResults[tienda.id] = { tienda, actual, meta, pctMeta, pctYoy, bonoMeta, poolGrp, bonoYoy, revScore }
+    const ventaReal = ventasMes[tienda.id] || 0
+    totalVentasEmpresa += ventaReal
+    const metaKey  = Object.keys(metasTienda).find(k => norm(k) === norm(tienda.nombre))
+    const metaData = metaKey ? metasTienda[metaKey] : null
+    const meta     = metaData?.meta || tienda.venta_ant * (1 + tienda.crec_obj)
+    const tipo     = metaData?.tipo || 'chica'
+    const cumplimiento = meta > 0 ? ventaReal / meta : 0
+    const tierPct      = getTierPct(cumplimiento, tipo, tiersGM, tiersCH)
+    const reviewScore  = reviews[tienda.id] ?? null
+    let reviewsFactor  = 1
+    if (reviewScore !== null) {
+      if (reviewScore > REVIEWS_MIN)      reviewsFactor = 1 + REVIEWS_BONUS
+      else if (reviewScore < REVIEWS_MIN) reviewsFactor = 1 - REVIEWS_PENALTY
+    }
+    storeResults[tienda.id] = { tienda, ventaReal, meta, tipo, cumplimiento, tierPct, reviewScore, reviewsFactor }
   }
-
-  const totalHorasTienda = {}
+  const empresaAlcanzo    = totalVentasEmpresa >= META_EMPRESA
+  const pctEmpresaLogrado = totalVentasEmpresa / META_EMPRESA
+  const factorEmpresa     = empresaAlcanzo ? 1 : 0
+  const horasTotalesByTienda = {}
   for (const h of horarios) {
-    totalHorasTienda[h.tienda_id] = (totalHorasTienda[h.tienda_id] || 0) + h.horas
+    if (h.horas > 0) horasTotalesByTienda[h.tienda_id] = (horasTotalesByTienda[h.tienda_id] || 0) + h.horas
   }
-
+  const totalHorasTodas = Object.values(horasTotalesByTienda).reduce((s,v)=>s+v,0)
   const resultados = []
   for (const emp of empleadas) {
-    const misHoras = horarios.filter(h => h.empleada_id === emp.id && h.horas > 0)
-    const totalH   = misHoras.reduce((s, h) => s + h.horas, 0) || 1
-    let bonoMetaEmp = 0, bonoYoyEmp = 0, poolEmp = 0, revEmp = 0
-    if (regla === 'PRORRATEO') {
-      for (const h of misHoras) {
-        const sr = storeResults[h.tienda_id]
-        if (!sr) continue
-        const w = h.horas / totalH
-        const wPool = h.horas / Math.max(totalHorasTienda[h.tienda_id] || 1, 1)
-        bonoMetaEmp += sr.bonoMeta * w; bonoYoyEmp += sr.bonoYoy * w;
-        poolEmp += sr.poolGrp * wPool; revEmp += sr.revScore * w
-      }
-    } else if (regla === 'PRINCIPAL') {
-      const main = [...misHoras].sort((a, b) => b.horas - a.horas)[0]
-      if (main) { const sr = storeResults[main.tienda_id]; if (sr) { bonoMetaEmp = sr.bonoMeta; bonoYoyEmp = sr.bonoYoy; poolEmp = sr.poolGrp * (main.horas / Math.max(totalHorasTienda[main.tienda_id] || 1, 1)); revEmp = sr.revScore } }
-    } else {
-      for (const h of misHoras) { const sr = storeResults[h.tienda_id]; if (!sr) continue; bonoMetaEmp += sr.bonoMeta; bonoYoyEmp += sr.bonoYoy; poolEmp += sr.poolGrp * (h.horas / Math.max(totalHorasTienda[h.tienda_id] || 1, 1)); revEmp += sr.revScore }
-      const n = misHoras.length || 1; bonoMetaEmp /= n; bonoYoyEmp /= n; revEmp /= n
+    const horasEmp = horarios.filter(h => h.empleada_id === emp.id && h.horas > 0)
+    const totalHorasEmp = horasEmp.reduce((s,h)=>s+h.horas,0)
+    if (totalHorasEmp === 0) continue
+    let bonoIndividual = 0
+    const tiendasTrabajadas = []
+    for (const h of horasEmp) {
+      const sr = storeResults[h.tienda_id]
+      if (!sr) continue
+      const totalHorasTienda = horasTotalesByTienda[h.tienda_id] || 1
+      const fraccion = h.horas / totalHorasTienda
+      bonoIndividual += BONO_IND * sr.tierPct * sr.reviewsFactor * fraccion
+      tiendasTrabajadas.push(sr.tienda.nombre)
     }
-    const bonoBase = Math.round(bonoMetaEmp * pesoMeta + bonoYoyEmp * pesoYoy)
-    const bonoReviews = usaRev ? Math.round(bonoBase * pesoRev * revEmp) : 0
-    resultados.push({ empleada_id: emp.id, nombre: emp.nombre, tiendas: misHoras.map(h => storeResults[h.tienda_id]?.tienda?.nombre).filter(Boolean), bono_meta: Math.round(bonoMetaEmp), bono_yoy: Math.round(bonoYoyEmp), bono_combinado: bonoBase, pool_grupal: Math.round(poolEmp), bono_reviews: bonoReviews, total_bono: Math.round(bonoBase + poolEmp + bonoReviews) })
+    const fraccionEmp = totalHorasTodas > 0 ? totalHorasEmp / totalHorasTodas : 0
+    const bonoEmpresa = BONO_EMP * factorEmpresa * fraccionEmp
+    resultados.push({
+      empleada_id:    emp.id,
+      nombre:         emp.nombre,
+      tiendas:        [...new Set(tiendasTrabajadas)],
+      horas_total:    totalHorasEmp,
+      bono_individual: Math.round(bonoIndividual),
+      bono_empresa:   Math.round(bonoEmpresa),
+      bono_meta:      Math.round(bonoIndividual),
+      bono_yoy:       0,
+      bono_combinado: Math.round(bonoIndividual),
+      pool_grupal:    Math.round(bonoEmpresa),
+      bono_reviews:   0,
+      total_bono:     Math.round(bonoIndividual + bonoEmpresa),
+    })
   }
-  resultados.sort((a, b) => b.total_bono - a.total_bono)
-  return { resultados, storeResults }
+  resultados.sort((a,b) => a.nombre.localeCompare(b.nombre))
+  return { resultados, storeResults, totalVentasEmpresa, empresaAlcanzo, pctEmpresaLogrado, META_EMPRESA }
 }
