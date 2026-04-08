@@ -138,69 +138,89 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const wb = XLSX.read(e.target.result, { type:'array' })
+        const data = {}
 
-        // Detect format: if sheets named "Dia 1"..."Dia 31" exist -> new multi-day format
+        // Detect format A: sheets named "Dia N"
         const daySheets = wb.SheetNames.filter(n => /^Dia \d+$/i.test(n.trim()))
-        const isMultiDay = daySheets.length >= 28
+        const isRowPerShift = daySheets.length >= 1
 
-        if (isMultiDay) {
-          // NEW FORMAT: sum hours across all day sheets
-          const data = {}
+        if (isRowPerShift) {
+          // FORMAT A: each day sheet has rows [Fecha, Colaborador/a, Tienda, Horas, Notas]
           for (const sheetName of daySheets) {
             const ws = wb.Sheets[sheetName]
             const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
-            // Find header row with "Colaborador"
+            // Find header row: look for row with "Colaborador" in any cell
             let hdrIdx = -1
             for (let i = 0; i < rawRows.length; i++) {
-              if (String(rawRows[i][0]||'').trim().toLowerCase().includes('colaborador')) { hdrIdx = i; break }
+              const row = rawRows[i] || []
+              if (row.some(c => String(c||'').toLowerCase().includes('colaborador'))) {
+                hdrIdx = i; break
+              }
             }
             if (hdrIdx < 0) continue
+            const hdrs = (rawRows[hdrIdx] || []).map(h => norm(String(h||'')))
+            const colColab  = hdrs.findIndex(h => h.includes('colaborador'))
+            const colTienda = hdrs.findIndex(h => h.includes('tienda'))
+            const colHoras  = hdrs.findIndex(h => h.includes('hora'))
+            if (colColab < 0 || colTienda < 0 || colHoras < 0) continue
+
+            for (let i = hdrIdx + 1; i < rawRows.length; i++) {
+              const row = rawRows[i] || []
+              const colab  = String(row[colColab]  || '').trim()
+              const tienda = String(row[colTienda] || '').trim()
+              const horas  = parseFloat(row[colHoras]) || 0
+              if (!colab || !tienda || horas <= 0) continue
+              if (!data[colab]) data[colab] = {}
+              data[colab][tienda] = (data[colab][tienda] || 0) + horas
+            }
+          }
+          setHorariosData(data)
+          setError('')
+        } else {
+          // FORMAT B/C: single sheet legacy (matrix or row-per-shift)
+          const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('resumen') || n.toLowerCase().includes('mensual')) || wb.SheetNames[0]
+          const ws = wb.Sheets[sheetName]
+          const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
+          // Detect if it is row-per-shift (has a "Tienda" column) or matrix
+          let hdrIdx = -1
+          for (let i = 0; i < rawRows.length; i++) {
+            const row = rawRows[i] || []
+            if (row.some(c => String(c||'').toLowerCase().includes('colaborador'))) {
+              hdrIdx = i; break
+            }
+          }
+          if (hdrIdx < 0) { setError('No se encontro fila de encabezado en horarios.'); return }
+          const hdrs = (rawRows[hdrIdx] || []).map(h => norm(String(h||'')))
+          const hasTiendaCol = hdrs.some(h => h === 'tienda')
+
+          if (hasTiendaCol) {
+            // Row-per-shift single sheet
+            const colColab  = hdrs.findIndex(h => h.includes('colaborador'))
+            const colTienda = hdrs.findIndex(h => h === 'tienda')
+            const colHoras  = hdrs.findIndex(h => h.includes('hora'))
+            for (let i = hdrIdx + 1; i < rawRows.length; i++) {
+              const row = rawRows[i] || []
+              const colab  = String(row[colColab]  || '').trim()
+              const tienda = String(row[colTienda] || '').trim()
+              const horas  = parseFloat(row[colHoras]) || 0
+              if (!colab || !tienda || horas <= 0) continue
+              if (!data[colab]) data[colab] = {}
+              data[colab][tienda] = (data[colab][tienda] || 0) + horas
+            }
+          } else {
+            // Legacy matrix format
             const colNames = rawRows[hdrIdx].map(h => String(h||'').trim())
             for (let i = hdrIdx + 1; i < rawRows.length; i++) {
               const row = rawRows[i]
               const nombre = String(row[0]||'').trim()
               if (!nombre || nombre.toUpperCase().includes('TOTAL')) continue
-              if (!data[nombre]) data[nombre] = {}
+              data[nombre] = {}
               for (let j = 1; j < colNames.length; j++) {
                 const colName = colNames[j]
                 if (!colName || colName.toUpperCase().includes('TOTAL')) continue
                 const h = parseFloat(row[j]) || 0
-                if (h > 0) data[nombre][colName] = (data[nombre][colName] || 0) + h
+                if (h > 0) data[nombre][colName] = h
               }
-            }
-          }
-          // Remove colaboradoras with no hours at all
-          for (const k of Object.keys(data)) {
-            if (Object.keys(data[k]).length === 0) delete data[k]
-          }
-          setHorariosData(data)
-          setError('')
-        } else {
-          // LEGACY FORMAT: single sheet with "Resumen Mensual" or similar
-          const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('resumen') || n.toLowerCase().includes('mensual')) || wb.SheetNames[0]
-          const ws = wb.Sheets[sheetName]
-          const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
-          let headerRowIdx = -1
-          for (let i = 0; i < rawRows.length; i++) {
-            const cell = String(rawRows[i][0]||'').trim()
-            if (cell.toLowerCase().includes('colaborador') || cell.toLowerCase() === 'nombre') {
-              headerRowIdx = i; break
-            }
-          }
-          if (headerRowIdx < 0) { setError('No se encontro fila de encabezado en horarios.'); return }
-          const headers = rawRows[headerRowIdx]
-          const colNames = headers.map(h => String(h||'').trim())
-          const data = {}
-          for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
-            const row = rawRows[i]
-            const nombre = String(row[0]||'').trim()
-            if (!nombre || nombre.toUpperCase().includes('TOTAL')) continue
-            data[nombre] = {}
-            for (let j = 1; j < colNames.length; j++) {
-              const colName = colNames[j]
-              if (!colName || colName.toUpperCase().includes('TOTAL')) continue
-              const h = parseFloat(row[j]) || 0
-              if (h > 0) data[nombre][colName] = h
             }
           }
           setHorariosData(data)
