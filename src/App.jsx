@@ -73,7 +73,7 @@ export default function App() {
     setNewTienda(''); setNewEmpleada(''); setConfigMsg(''); setShowConfig(true)
   }
 
-  // ââ Parsear archivo de VENTAS ââââââââââââââââââââââââââââââââââââââââââââ
+  //  Parsear archivo de VENTAS 
   function parsearVentas(file) {
     setVentasFile(file.name)
     const reader = new FileReader()
@@ -151,7 +151,7 @@ export default function App() {
     reader.readAsArrayBuffer(file)
   }
 
-  // ââ CALCULAR BONOS ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  //  CALCULAR BONOS 
   async function calcular() {
     if (!ventasData || !horariosData) { setError('Sube los dos archivos primero.'); return }
     setLoading(true); setError('')
@@ -208,7 +208,7 @@ export default function App() {
     finally { setLoading(false) }
   }
 
-  // ââ EXPORTAR ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  //  EXPORTAR 
   function exportarExcel() {
     if (!resultados) return
     const data = resultados.resultados.map(r => ({
@@ -225,11 +225,11 @@ export default function App() {
     XLSX.writeFile(wb, `bonos_${mes}.xlsx`)
   }
 
-  // ââ CONFIG CRUD âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  //  CONFIG CRUD 
   async function resetAndReload() { const cfg = await loadConfig(); setConfig(cfg); return cfg; }
   async function addTienda() {
     const n=newTienda.trim(); if(!n) return
-    try { await supabase.from('tiendas').insert({nombre:n,activa:true,venta_ant:80000,crec_obj:0.05}); const cfg=await resetAndReload(); setEditingTiendas(cfg.tiendas.map(t=>({...t}))); setNewTienda(''); setMsg('Local "'+n+'" aÃ±adido.') }
+    try { await supabase.from('tiendas').insert({nombre:n,activa:true,venta_ant:80000,crec_obj:0.05}); const cfg=await resetAndReload(); setEditingTiendas(cfg.tiendas.map(t=>({...t}))); setNewTienda(''); setMsg('Local "'+n+'" aadido.') }
     catch(e){setMsg('Error: '+e.message,false)}
   }
   async function deleteTienda(t) {
@@ -243,7 +243,7 @@ export default function App() {
   }
   async function addEmpleada() {
     const n=newEmpleada.trim(); if(!n) return
-    try { await supabase.from('empleadas').insert({nombre:n,activa:true}); const cfg=await resetAndReload(); setEditingEmpleadas(cfg.empleadas.map(e=>({...e}))); setNewEmpleada(''); setMsg('Colaboradora "'+n+'" aÃ±adida.') }
+    try { await supabase.from('empleadas').insert({nombre:n,activa:true}); const cfg=await resetAndReload(); setEditingEmpleadas(cfg.empleadas.map(e=>({...e}))); setNewEmpleada(''); setMsg('Colaboradora "'+n+'" aadida.') }
     catch(e){setMsg('Error: '+e.message,false)}
   }
   async function deleteEmpleada(emp) {
@@ -266,15 +266,15 @@ export default function App() {
           <span className="topbar-sep">·</span>
           <input type="month" value={mes} onChange={e=>setMes(e.target.value)} className="month-input"/>
         </div>
-        <button onClick={openConfig} style={{background:'rgba(255,255,255,0.18)',border:'none',borderRadius:6,color:'#fff',fontSize:11,padding:'4px 14px',cursor:'pointer'}}>â Config</button>
+        <button onClick={openConfig} style={{background:'rgba(255,255,255,0.18)',border:'none',borderRadius:6,color:'#fff',fontSize:11,padding:'4px 14px',cursor:'pointer'}}> Config</button>
       </div>
 
       {/* CONFIG PANEL */}
       {showConfig && (
         <div style={S.configPanel}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-            <span style={{color:'#fff',fontWeight:600,fontSize:15}}>â Configuracion</span>
-            <button onClick={()=>setShowConfig(false)} style={{background:'none',border:'none',color:'#aaa',fontSize:20,cursor:'pointer'}}>Ã</button>
+            <span style={{color:'#fff',fontWeight:600,fontSize:15}}> Configuracion</span>
+            <button onClick={()=>setShowConfig(false)} style={{background:'none',border:'none',color:'#aaa',fontSize:20,cursor:'pointer'}}></button>
           </div>
           <div style={S.section}>
             <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:4}}>Locales ({editingTiendas.length})</strong>
@@ -283,7 +283,7 @@ export default function App() {
               {editingTiendas.map((t,i)=>(
                 <div key={t.id} style={{display:'flex',gap:4,alignItems:'center'}}>
                   <input value={t.nombre} style={{...S.input,flex:1}} onChange={e=>setEditingTiendas(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))}/>
-                  <button onClick={()=>deleteTienda(t)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'5px 8px',flexShrink:0}}>â</button>
+                  <button onClick={()=>deleteTienda(t)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'5px 8px',flexShrink:0}}></button>
                 </div>
               ))}
             </div>
@@ -299,7 +299,7 @@ export default function App() {
               {editingEmpleadas.map((e)=>(
                 <div key={e.id} style={{display:'flex',gap:4,alignItems:'center'}}>
                   <span style={{color:'#ccc',fontSize:11,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.nombre}</span>
-                  <button onClick={()=>deleteEmpleada(e)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'3px 7px',flexShrink:0,fontSize:10}}>â</button>
+                  <button onClick={()=>deleteEmpleada(e)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'3px 7px',flexShrink:0,fontSize:10}}></button>
                 </div>
               ))}
             </div>
@@ -312,40 +312,40 @@ export default function App() {
         </div>
       )}
 
-      {error && <div className="error-bar">{error}<button onClick={()=>setError('')}>Ã</button></div>}
+      {error && <div className="error-bar">{error}<button onClick={()=>setError('')}></button></div>}
 
       {/* UPLOAD SECTION */}
       <div className="panel">
         <div className="card">
-          <h3 style={{marginBottom:6}}>Subir archivos del mes â {mes}</h3>
-          <p className="hint">Sube los dos archivos para calcular los bonos automÃ¡ticamente.</p>
+          <h3 style={{marginBottom:6}}>Subir archivos del mes  {mes}</h3>
+          <p className="hint">Sube los dos archivos para calcular los bonos automticamente.</p>
           <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
             <UploadCard
               title="1. Ventas mensual"
               subtitle="Archivo Excel de ventas por tienda"
-              hint="Columna B = tienda Â· Columna G = ventas del mes Â· Columna J = meta"
-              icon="ð"
+              hint="Columna B = tienda  Columna G = ventas del mes  Columna J = meta"
+              icon=""
               onFile={parsearVentas}
               fileName={ventasFile}
               done={!!ventasData}
-              status={ventasData ? `â ${Object.keys(ventasData).length} tiendas leÃ­das` : ''}
+              status={ventasData ? ` ${Object.keys(ventasData).length} tiendas ledas` : ''}
             />
             <UploadCard
               title="2. Horarios mensual"
               subtitle="Excel con horas por colaboradora y tienda"
-              hint="Hoja 'Resumen Mensual' Â· Columna A = colaboradora Â· Resto = tiendas"
-              icon="ð"
+              hint="Hoja 'Resumen Mensual'  Columna A = colaboradora  Resto = tiendas"
+              icon=""
               onFile={parsearHorarios}
               fileName={horariosFile}
               done={!!horariosData}
-              status={horariosData ? `â ${Object.keys(horariosData).length} colaboradoras leÃ­das` : ''}
+              status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras ledas` : ''}
             />
           </div>
 
-          {/* Preview de ventas si estÃ¡n cargadas */}
+          {/* Preview de ventas si estn cargadas */}
           {ventasData && (
             <div style={{marginTop:16}}>
-              <div style={{fontSize:12,fontWeight:600,color:'#9FE1CB',marginBottom:8}}>Vista previa â ventas por tienda:</div>
+              <div style={{fontSize:12,fontWeight:600,color:'#9FE1CB',marginBottom:8}}>Vista previa  ventas por tienda:</div>
               <div className="ventas-summary">
                 {config.tiendas.map(tienda => {
                   const match = Object.keys(ventasData).find(k => norm(k) === norm(tienda.nombre))
@@ -357,7 +357,7 @@ export default function App() {
                     <div key={tienda.id} className="tienda-chip">
                       <div className="tienda-name">{tienda.nombre}</div>
                       <div className="tienda-total">{fmt(venta)}</div>
-                      <div className={`tienda-pct ${p>=1?'green':p>=0.8?'amber':venta>0?'red':''}`}>{venta>0?`${(p*100).toFixed(0)}%`:'â'}</div>
+                      <div className={`tienda-pct ${p>=1?'green':p>=0.8?'amber':venta>0?'red':''}`}>{venta>0?`${(p*100).toFixed(0)}%`:''}</div>
                     </div>
                   )
                 })}
@@ -370,8 +370,8 @@ export default function App() {
             const sinMatch = Object.keys(ventasData).filter(k => !config.tiendas.find(t => norm(t.nombre) === norm(k)))
             return sinMatch.length > 0 ? (
               <div className="info-card amber" style={{marginTop:10}}>
-                â  Estas tiendas del Excel no coinciden con el sistema: <strong>{sinMatch.join(', ')}</strong><br/>
-                <span style={{fontSize:11}}>Usa â Config para ajustar los nombres.</span>
+                 Estas tiendas del Excel no coinciden con el sistema: <strong>{sinMatch.join(', ')}</strong><br/>
+                <span style={{fontSize:11}}>Usa  Config para ajustar los nombres.</span>
               </div>
             ) : null
           })()}
@@ -380,17 +380,17 @@ export default function App() {
             const sinMatch = Object.keys(horariosData).filter(k => !config.empleadas.find(e => norm(e.nombre) === norm(k)))
             return sinMatch.length > 0 ? (
               <div className="info-card amber" style={{marginTop:8}}>
-                â  Estas colaboradoras del Excel no coinciden: <strong>{sinMatch.join(', ')}</strong>
+                 Estas colaboradoras del Excel no coinciden: <strong>{sinMatch.join(', ')}</strong>
               </div>
             ) : null
           })()}
 
-          {/* BOTÃN CALCULAR */}
+          {/* BOTN CALCULAR */}
           <div style={{marginTop:20,display:'flex',justifyContent:'flex-end'}}>
             <button className="btn primary" style={{fontSize:14,padding:'10px 28px'}}
               onClick={calcular}
               disabled={loading || !ventasData || !horariosData}>
-              {loading ? 'Calculando...' : (ventasData && horariosData ? 'â Calcular bonos' : 'Sube los dos archivos para continuar')}
+              {loading ? 'Calculando...' : (ventasData && horariosData ? ' Calcular bonos' : 'Sube los dos archivos para continuar')}
             </button>
           </div>
         </div>
@@ -403,10 +403,10 @@ export default function App() {
           <div style={{background:resultados.empresaAlcanzo?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.12)',border:`1px solid ${resultados.empresaAlcanzo?'#16A34A':'#DC2626'}`,borderRadius:10,padding:'14px 18px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
             <div>
               <div style={{fontWeight:700,fontSize:14,color:resultados.empresaAlcanzo?'#86efac':'#fca5a5'}}>
-                {resultados.empresaAlcanzo?'â META EMPRESA ALCANZADA':'â Meta empresa no alcanzada'}
+                {resultados.empresaAlcanzo?' META EMPRESA ALCANZADA':' Meta empresa no alcanzada'}
               </div>
               <div style={{fontSize:12,color:'#ccc',marginTop:2}}>
-                Ventas totales: <b>{fmt(resultados.totalVentasEmpresa)}</b> Â· Meta: <b>{fmt(resultados.META_EMPRESA)}</b> Â· {pct(resultados.pctEmpresaLogrado)}
+                Ventas totales: <b>{fmt(resultados.totalVentasEmpresa)}</b>  Meta: <b>{fmt(resultados.META_EMPRESA)}</b>  {pct(resultados.pctEmpresaLogrado)}
               </div>
             </div>
             <div style={{textAlign:'right'}}>
@@ -415,12 +415,12 @@ export default function App() {
             </div>
           </div>
 
-          {/* MÃ©tricas */}
+          {/* Mtricas */}
           <div className="metrics-row">
             {[
               {label:'Total bonos',value:fmt(resultados.resultados.reduce((s,r)=>s+r.total_bono,0))},
               {label:'Colaboradoras',value:resultados.resultados.length},
-              {label:'Tiendas â¥100%',value:`${Object.values(resultados.storeResults).filter(s=>s.cumplimiento>=1).length}/${config.tiendas.length}`},
+              {label:'Tiendas 100%',value:`${Object.values(resultados.storeResults).filter(s=>s.cumplimiento>=1).length}/${config.tiendas.length}`},
               {label:'Cumpl. promedio',value:pct(Object.values(resultados.storeResults).reduce((s,r)=>s+r.cumplimiento,0)/Math.max(config.tiendas.length,1))},
             ].map(m=><div key={m.label} className="metric-card"><div className="metric-label">{m.label}</div><div className="metric-value">{m.value}</div></div>)}
           </div>
@@ -455,7 +455,7 @@ export default function App() {
           {/* Tabla colaboradoras */}
           <div className="card">
             <h3>Bonos por colaboradora</h3>
-            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>S/2,000 = <span style={{color:'#818CF8'}}>70% individual (S/1,400)</span> + <span style={{color:'#34D399'}}>30% empresa (S/600)</span> Â· proporcional a horas</div>
+            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>S/2,000 = <span style={{color:'#818CF8'}}>70% individual (S/1,400)</span> + <span style={{color:'#34D399'}}>30% empresa (S/600)</span>  proporcional a horas</div>
             <div className="table-scroll">
               <table className="res-table">
                 <thead><tr><th>Colaboradora</th><th>Tiendas</th><th>Horas</th><th style={{color:'#818CF8'}}>Individual</th><th style={{color:'#34D399'}}>Empresa</th><th>TOTAL</th></tr></thead>
@@ -482,8 +482,8 @@ export default function App() {
           </div>
 
           <div style={{display:'flex',justifyContent:'flex-end',gap:12,marginTop:8}}>
-            <button className="btn" onClick={()=>setResultados(null)}>â Nuevo mes</button>
-            <button className="btn primary" onClick={exportarExcel}>â Exportar Excel</button>
+            <button className="btn" onClick={()=>setResultados(null)}>Nuevo mes</button>
+            <button className="btn primary" onClick={exportarExcel}>Exportar Excel</button>
           </div>
         </div>
       )}
