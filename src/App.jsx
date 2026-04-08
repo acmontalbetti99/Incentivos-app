@@ -127,31 +127,40 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const wb = XLSX.read(e.target.result, { type:'array' })
-        // Prefer "Resumen Mensual" sheet
         const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('resumen') || n.toLowerCase().includes('mensual')) || wb.SheetNames[0]
         const ws = wb.Sheets[sheetName]
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: 0 })
-        // Format: col0=Colaborador/a, rest=tienda names, values=hours
-        const data = {}
-        const cols = rows.length > 0 ? Object.keys(rows[0]) : []
-        const colColab = cols[0]
-        for (const row of rows) {
-          const nombre = String(row[colColab]||'').trim()
-          if (!nombre || nombre.toUpperCase().includes('TOTAL')) continue
-          data[nombre] = {}
-          for (const col of cols.slice(1)) {
-            const h = parseFloat(row[col]) || 0
-            if (h > 0) data[nombre][col] = h
+        // Use raw arrays to handle multi-row headers
+        const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
+        // Find header row: the row that has "Colaborador" in col 0
+        let headerRowIdx = -1
+        for (let i = 0; i < rawRows.length; i++) {
+          const cell = String(rawRows[i][0]||'').trim()
+          if (cell.toLowerCase().includes('colaborador') || cell.toLowerCase() === 'nombre') {
+            headerRowIdx = i; break
           }
         }
-        console.log('DEBUG horariosData keys:', Object.keys(data).slice(0,5))
-        console.log('DEBUG horariosData first entry:', JSON.stringify(Object.entries(data)[0]))
+        if (headerRowIdx < 0) { setError('No se encontro fila de encabezado en horarios.'); return }
+        const headers = rawRows[headerRowIdx]
+        const colNames = headers.map(h => String(h||'').trim())
+        const data = {}
+        for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
+          const row = rawRows[i]
+          const nombre = String(row[0]||'').trim()
+          if (!nombre || nombre.toUpperCase().includes('TOTAL')) continue
+          data[nombre] = {}
+          for (let j = 1; j < colNames.length; j++) {
+            const colName = colNames[j]
+            if (!colName || colName.toUpperCase().includes('TOTAL')) continue
+            const h = parseFloat(row[j]) || 0
+            if (h > 0) data[nombre][colName] = h
+          }
+        }
         setHorariosData(data)
         setError('')
       } catch(err) { setError('Error al leer horarios: '+err.message) }
     }
     reader.readAsArrayBuffer(file)
-  }
+  }  }
 
   //  CALCULAR BONOS 
   async function calcular() {
