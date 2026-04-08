@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react' // v2
 import * as XLSX from 'xlsx'
 import {
   supabase, loadConfig, saveHorarios, saveResultados, saveVentasMes,
