@@ -104,11 +104,9 @@ export default function App() {
     reader.onload=(e)=>{
       try {
         const wb=XLSX.read(e.target.result,{type:'array'})
-        // Prefiere hoja "Resumen Mensual", si no usa la primera
         const sheetName=wb.SheetNames.find(n=>n.toLowerCase().includes('resumen')||n.toLowerCase().includes('mensual'))||wb.SheetNames[0]
-        const ws=wb.Sheets[sheetName]
-        const rows=XLSX.utils.sheet_to_json(ws,{defval:0})
-        if(!rows.length){setError('El archivo de horarios esta vacio.');return}
+        const ws=wb.Sheets[sheetName]; const rows=XLSX.utils.sheet_to_json(ws,{defval:0})
+        if(!rows.length){setError('El archivo esta vacio.');return}
         const cols=Object.keys(rows[0]); const colEmp=cols[0]
         const nuevosHorarios=[]
         for(const row of rows){
@@ -117,8 +115,7 @@ export default function App() {
           const emp=config.empleadas.find(e=>norm(e.nombre)===norm(nombreEmp))
           if(!emp) continue
           for(const col of cols.slice(1)){
-            const colNorm=norm(col)
-            if(colNorm===norm('total')||colNorm===norm('total horas')) continue
+            if(norm(col).includes('total')) continue
             const tienda=config.tiendas.find(t=>norm(t.nombre)===norm(col))
             if(!tienda) continue
             const horas=parseFloat(row[col])||0
@@ -129,7 +126,7 @@ export default function App() {
           const base=prev.filter(h=>!nuevosHorarios.find(n=>n.empleada_id===h.empleada_id&&n.tienda_id===h.tienda_id))
           return [...base,...nuevosHorarios]
         })
-        setMsg(`${nuevosHorarios.length} registros cargados desde "${sheetName}".`)
+        setMsg(nuevosHorarios.length+' registros cargados desde "'+sheetName+'".')
       } catch(err){setError('Error al leer horarios: '+err.message)}
     }
     reader.readAsArrayBuffer(file)
@@ -181,27 +178,58 @@ export default function App() {
     setLoading(true)
     try{
       const ventasMesById=Object.fromEntries(Object.entries(ventasPorId).map(([id,{total}])=>[id,total]))
-      const ventasAntById={}; for(const t of config.tiendas) ventasAntById[t.id]=t.venta_ant
       const reviewsById={}
       const{data:revData}=await supabase.from('reviews').select('*').eq('mes',mes)
       if(revData) for(const r of revData) reviewsById[r.tienda_id]=r.score
-      const{resultados:res,storeResults}=calcularBonos({tiendas:config.tiendas,tiersM:config.tiersM,tiersY:config.tiersY,params:config.params,empleadas:config.empleadas,ventasMes:ventasMesById,ventasAnt:ventasAntById,horarios,reviews:reviewsById})
-      setResultados({resultados:res,storeResults})
-      await saveHorarios(mes,horarios);await saveResultados(mes,res);goStep(3)
+      const resultado=calcularBonos({tiendas:config.tiendas,empleadas:config.empleadas,horarios,ventasMes:ventasMesById,params:config.params,reviews:reviewsById})
+      setResultados(resultado)
+      await saveHorarios(mes,horarios)
+      await saveResultados(mes,resultado.resultados)
+      goStep(3)
     } catch(e){setError('Error al calcular: '+e.message)}
     finally{setLoading(false)}
   }
 
   function exportarExcel(){
     if(!resultados) return
-    const data=resultados.resultados.map(r=>({'Empleada':r.nombre,'Tiendas':r.tiendas.join(', '),'Bono Meta (S/)':r.bono_meta,'Bono YoY (S/)':r.bono_yoy,'Bono Combinado (S/)':r.bono_combinado,'Pool Grupal (S/)':r.pool_grupal,'Bono Reviews (S/)':r.bono_reviews,'TOTAL BONO (S/)':r.total_bono}))
+    const data=resultados.resultados.map(r=>({
+      'Colaboradora':r.nombre,
+      'Tiendas':r.tiendas.join(', '),
+      'Horas':r.horas_total,
+      'Bono Individual 70% (S/)':r.bono_individual,
+      'Bono Empresa 30% (S/)':r.bono_empresa,
+      'TOTAL BONO (S/)':r.total_bono,
+    }))
     const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb,ws,`Bonos ${mes}`);XLSX.writeFile(wb,`bonos_${mes}.xlsx`)
   }
 
   function goStep(n){setStep(n);setError('')}
   const fmt=(n)=>`S/ ${Math.round(n||0).toLocaleString('es-PE')}`
-  const pct=(n)=>`${Math.round((n||0)*100)}%`
+  const pct=(n)=>`${(n*100).toFixed(1)}%`
+  const badge=(pct,tipo)=>{
+    const isChica=tipo==='chica'
+    if(pct>=1.10) return 'green'
+    if(pct>=1.05) return 'green'
+    if(pct>=1.00) return 'teal'
+    if(pct>=0.95) return 'amber'
+    return 'red'
+  }
+  const tierLabel=(cumpl,tipo)=>{
+    if(tipo==='chica'){
+      if(cumpl>=1.10) return '110%+ → 110%'
+      if(cumpl>=1.05) return '105-109% → 100%'
+      if(cumpl>=1.00) return '100-104% → 80%'
+      if(cumpl>=0.95) return '95-99% → 25%'
+      return '<95% → Sin bono'
+    } else {
+      if(cumpl>=1.10) return '110%+ → 110%'
+      if(cumpl>=1.05) return '105-109% → 105%'
+      if(cumpl>=1.00) return '100-104% → 100%'
+      if(cumpl>=0.95) return '95-99% → 40%'
+      return '<95% → Sin bono'
+    }
+  }
 
   if(!config) return <div className="loading-screen"><div className="spinner"/><p>{error||'Conectando...'}</p></div>
 
@@ -232,7 +260,7 @@ export default function App() {
           </div>
           <div style={S.section}>
             <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:4}}>Locales ({editingTiendas.length})</strong>
-            <p style={{color:'#aaa',fontSize:11,marginBottom:8}}>Deben coincidir exactamente con la columna Sucursal de Rapifac.</p>
+            <p style={{color:'#aaa',fontSize:11,marginBottom:8}}>Deben coincidir con la columna Sucursal de Rapifac.</p>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:5,marginBottom:8}}>
               {editingTiendas.map((t,i)=>(
                 <div key={t.id} style={{display:'flex',gap:4,alignItems:'center'}}>
@@ -245,7 +273,7 @@ export default function App() {
               <input value={newTienda} placeholder="Nombre del nuevo local..." style={{...S.input,flex:1}} onChange={e=>setNewTienda(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addTienda()}/>
               <button onClick={addTienda} style={{...S.btnSm,...S.btnSuccess,flexShrink:0}}>+ Anadir</button>
             </div>
-            <button onClick={saveTiendas} style={{...S.btnSm,...S.btnPrimary}}>Guardar nombres de locales</button>
+            <button onClick={saveTiendas} style={{...S.btnSm,...S.btnPrimary}}>Guardar nombres</button>
           </div>
           <div style={S.section}>
             <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:4}}>Colaboradoras ({editingEmpleadas.length})</strong>
@@ -288,7 +316,7 @@ export default function App() {
               <input id="fi" type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>handleFile(e.target.files[0])}/>
             </div>
           </div>
-          {savedMapping?<div className="info-card purple">Mapeo guardado — Sucursal: <b>{savedMapping.col_sucursal}</b>. Para cambiar columnas usa ⚙ Config → Resetear mapeo.</div>:<div className="info-card teal">Primera vez: sube el Excel y te pedira mapear las columnas una sola vez.</div>}
+          {savedMapping?<div className="info-card purple">Mapeo guardado — Sucursal: <b>{savedMapping.col_sucursal}</b>. Para cambiar usa ⚙ Config → Resetear mapeo.</div>:<div className="info-card teal">Primera vez: sube el Excel y mapea las columnas una sola vez.</div>}
         </div>
       )}
 
@@ -296,13 +324,12 @@ export default function App() {
         <div className="panel">
           <div className="card">
             <div className="card-header"><h3>Archivo cargado</h3><span className="file-pill">{fileName}</span></div>
-            <p className="hint">Vista previa:</p>
             <div className="table-scroll"><table className="preview-table"><thead><tr>{columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{rawRows.slice(0,3).map((r,i)=><tr key={i}>{columns.map(c=><td key={c}>{String(r[c]??'')}</td>)}</tr>)}</tbody></table></div>
           </div>
           <div className="card">
             <h3>Mapear columnas <span className="hint-inline">— solo la primera vez</span></h3>
             <div className="mapper-grid">
-              {[{key:'col_sucursal',label:'Sucursal / tienda',req:true},{key:'col_total',label:'Monto total',req:true},{key:'col_fecha',label:'Fecha',req:true},{key:'col_cajero',label:'Cajero / vendedor',req:false}].map(({key,label,req})=>(
+              {[{key:'col_sucursal',label:'Sucursal / tienda',req:true},{key:'col_total',label:'Monto total',req:true},{key:'col_fecha',label:'Fecha',req:true},{key:'col_cajero',label:'Cajero',req:false}].map(({key,label,req})=>(
                 <div key={key} className="map-item">
                   <label>{label} {req&&<span className="req">*</span>}</label>
                   <select value={mapping?.[key]||''} onChange={e=>setMapping(m=>({...m,[key]:e.target.value}))}>
@@ -312,7 +339,6 @@ export default function App() {
                 </div>
               ))}
             </div>
-            <div className="info-card teal">Esta configuracion se guardara. El proximo mes solo subes el archivo.</div>
             <div className="card-footer"><span className="hint-small"><span className="req">*</span> Obligatorios</span><button className="btn primary" onClick={confirmarMapeo} disabled={loading}>{loading?'Procesando...':'Guardar y continuar →'}</button></div>
           </div>
         </div>
@@ -322,7 +348,7 @@ export default function App() {
         <div className="panel">
           <div className="card">
             <div className="card-header"><h3>Ventas del mes — {mes}</h3><span className="saved-pill">✓ {Object.keys(ventasPorId).length} tiendas</span></div>
-            {noMatchTiendas.length>0&&<div className="info-card amber" style={{marginBottom:10}}>⚠ Sin coincidencia: <strong>{noMatchTiendas.join(', ')}</strong><span style={{display:'block',fontSize:11,marginTop:2}}>Usa ⚙ Config → edita los nombres de locales para que coincidan.</span></div>}
+            {noMatchTiendas.length>0&&<div className="info-card amber" style={{marginBottom:10}}>⚠ Sin coincidencia: <strong>{noMatchTiendas.join(', ')}</strong><span style={{display:'block',fontSize:11,marginTop:2}}>Usa ⚙ Config → edita los nombres.</span></div>}
             <div className="ventas-summary">
               {config.tiendas.map(tienda=>{
                 const v=ventasPorId[tienda.id];const total=v?.total||0
@@ -335,32 +361,26 @@ export default function App() {
             <h3>Horas por colaboradora</h3>
             <div style={{display:'flex',gap:16,marginBottom:14,flexWrap:'wrap',alignItems:'flex-start',padding:'12px',background:'rgba(79,70,229,0.08)',borderRadius:8,border:'1px solid rgba(79,70,229,0.2)'}}>
               <div>
-                <div style={{color:'#9FE1CB',fontSize:12,fontWeight:600,marginBottom:6}}>📂 Opcion 1: Subir Excel de horarios (recomendado)</div>
+                <div style={{color:'#9FE1CB',fontSize:12,fontWeight:600,marginBottom:6}}>📂 Subir Excel de horarios</div>
                 <label style={{background:'#4F46E5',color:'#fff',borderRadius:6,padding:'8px 16px',fontSize:12,cursor:'pointer',display:'inline-block'}}>
-                  Seleccionar archivo Excel
+                  Seleccionar archivo
                   <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>{cargarHorariosDesdeExcel(e.target.files[0]);e.target.value='';}}/>
                 </label>
-                {horarios.filter(h=>h.horas>0).length>0&&<span style={{color:'#86efac',fontSize:11,display:'block',marginTop:4}}>✓ {horarios.filter(h=>h.horas>0).length} registros cargados</span>}
-                <div style={{color:'#9CA3AF',fontSize:10,marginTop:4}}>Carga la hoja "Resumen Mensual" automaticamente.</div>
+                {horarios.filter(h=>h.horas>0).length>0&&<span style={{color:'#86efac',fontSize:11,display:'block',marginTop:4}}>✓ {horarios.filter(h=>h.horas>0).length} registros</span>}
               </div>
-              <div style={{color:'#6B7280',alignSelf:'center',fontSize:11}}>— o —</div>
-              <div style={{color:'#9CA3AF',fontSize:12}}><div style={{fontWeight:600,marginBottom:4,color:'#ccc'}}>✏ Opcion 2: Ingresa manualmente</div>Edita la tabla de abajo (totales mensuales).</div>
+              <div style={{color:'#6B7280',alignSelf:'center',fontSize:11}}>— o ingresa manualmente →</div>
             </div>
             <div className="table-scroll">
               <table className="hours-table">
-                <thead><tr><th className="emp-col">Colaborador/a</th>{config.tiendas.map(t=><th key={t.id} title={t.nombre}>{t.nombre.slice(0,8)}</th>)}<th className="total-col">Total</th></tr></thead>
+                <thead><tr><th className="emp-col">Colaborador/a</th>{config.tiendas.map(t=><th key={t.id} title={t.nombre}>{t.nombre.slice(0,7)}</th>)}<th className="total-col">Total</th></tr></thead>
                 <tbody>
                   {config.empleadas.map(emp=>{
                     const empH=config.tiendas.map(ti=>{const h=horarios.find(r=>r.empleada_id===emp.id&&r.tienda_id===ti.id);return h?.horas||0})
                     const tot=empH.reduce((s,h)=>s+h,0)
-                    return(<tr key={emp.id}>
-                      <td className="emp-name">{emp.nombre}</td>
-                      {config.tiendas.map((ti,idx)=>(
-                        <td key={ti.id}><input type="number" min="0" max="300" value={empH[idx]} className="hours-input"
-                          onChange={e=>{const val=parseFloat(e.target.value)||0;setHorarios(prev=>{const next=prev.filter(r=>!(r.empleada_id===emp.id&&r.tienda_id===ti.id));if(val>0)next.push({empleada_id:emp.id,empleada_nombre:emp.nombre,tienda_id:ti.id,tienda_nombre:ti.nombre,horas:val});return next})}}/></td>
-                      ))}
-                      <td className="total-h">{tot}</td>
-                    </tr>)
+                    return(<tr key={emp.id}><td className="emp-name">{emp.nombre}</td>
+                      {config.tiendas.map((ti,idx)=>(<td key={ti.id}><input type="number" min="0" max="300" value={empH[idx]} className="hours-input"
+                        onChange={e=>{const val=parseFloat(e.target.value)||0;setHorarios(prev=>{const next=prev.filter(r=>!(r.empleada_id===emp.id&&r.tienda_id===ti.id));if(val>0)next.push({empleada_id:emp.id,empleada_nombre:emp.nombre,tienda_id:ti.id,tienda_nombre:ti.nombre,horas:val});return next})}}/></td>))}
+                      <td className="total-h">{tot}</td></tr>)
                   })}
                 </tbody>
               </table>
@@ -372,19 +392,95 @@ export default function App() {
 
       {step===3&&resultados&&(
         <div className="panel">
-          <div className="metrics-row">
-            {[{label:'Total bonos',value:fmt(resultados.resultados.reduce((s,r)=>s+r.total_bono,0))},{label:'Colaboradoras',value:resultados.resultados.length},{label:'Tiendas en meta',value:`${Object.values(resultados.storeResults).filter(s=>s.pctMeta>=1).length} / ${config.tiendas.length}`},{label:'Cumpl. promedio',value:pct(Object.values(resultados.storeResults).reduce((s,r)=>s+r.pctMeta,0)/Math.max(config.tiendas.length,1))},].map(m=><div key={m.label} className="metric-card"><div className="metric-label">{m.label}</div><div className="metric-value">{m.value}</div></div>)}
+          {/* Banner empresa */}
+          <div style={{background:resultados.empresaAlcanzo?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.12)',border:`1px solid ${resultados.empresaAlcanzo?'#16A34A':'#DC2626'}`,borderRadius:10,padding:'14px 18px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:14,color:resultados.empresaAlcanzo?'#86efac':'#fca5a5'}}>
+                {resultados.empresaAlcanzo?'✅ META EMPRESA ALCANZADA':'❌ Meta empresa no alcanzada'}
+              </div>
+              <div style={{fontSize:12,color:'#ccc',marginTop:2}}>
+                Ventas totales: <b>{fmt(resultados.totalVentasEmpresa)}</b> / Meta: <b>{fmt(resultados.META_EMPRESA)}</b> · Cumplimiento: <b>{pct(resultados.pctEmpresaLogrado)}</b>
+              </div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:11,color:'#aaa'}}>Componente empresa (30%)</div>
+              <div style={{fontSize:16,fontWeight:700,color:resultados.empresaAlcanzo?'#86efac':'#fca5a5'}}>{resultados.empresaAlcanzo?'S/ 600 por colab.':'S/ 0'}</div>
+            </div>
           </div>
-          <div className="card"><h3>Ventas por tienda</h3><div className="table-scroll"><table className="res-table"><thead><tr><th>Tienda</th><th>Meta</th><th>Real</th><th>Cumpl.</th><th>YoY</th><th>Pool</th><th>Estado</th></tr></thead><tbody>{Object.values(resultados.storeResults).map(({tienda,actual,meta,pctMeta,pctYoy,poolGrp})=>(<tr key={tienda.id}><td className="bold">{tienda.nombre}</td><td>{fmt(meta)}</td><td>{fmt(actual)}</td><td><span className={`badge ${pctMeta>=1.05?'green':pctMeta>=0.95?'teal':pctMeta>=0.8?'amber':'red'}`}>{pct(pctMeta)}</span></td><td className={pctYoy>=0?'text-green':'text-red'}>{pct(pctYoy)}</td><td>{fmt(poolGrp)}</td><td><span className={`badge ${pctMeta>=1.05?'green':pctMeta>=0.95?'teal':pctMeta>=0.8?'amber':'red'}`}>{pctMeta>=1.15?'Exceeds':pctMeta>=1.05?'Stretch':pctMeta>=0.95?'On target':pctMeta>=0.8?'Near':'Below'}</span></td></tr>))}</tbody></table></div></div>
-          <div className="card"><h3>Bonos por colaboradora</h3><div className="table-scroll"><table className="res-table"><thead><tr><th>Colaboradora</th><th>Tiendas</th><th>Combinado</th><th>Pool</th><th>Reviews</th><th>TOTAL</th></tr></thead><tbody>{resultados.resultados.map(r=>(<tr key={r.empleada_id}><td className="bold">{r.nombre}</td><td>{r.tiendas.map(t=><span key={t} className="pill">{t}</span>)}</td><td>{fmt(r.bono_combinado)}</td><td>{fmt(r.pool_grupal)}</td><td>{fmt(r.bono_reviews)}</td><td><strong className="total-bono">{fmt(r.total_bono)}</strong></td></tr>))}<tr className="total-row"><td colSpan={5}>TOTAL A PAGAR</td><td><strong>{fmt(resultados.resultados.reduce((s,r)=>s+r.total_bono,0))}</strong></td></tr></tbody></table></div></div>
-          <div className="card-footer standalone"><button className="btn" onClick={()=>goStep(2)}>← Ajustar horarios</button><button className="btn primary" onClick={()=>goStep(4)}>Exportar →</button></div>
+
+          {/* Métricas rápidas */}
+          <div className="metrics-row">
+            {[
+              {label:'Total bonos a pagar',value:fmt(resultados.resultados.reduce((s,r)=>s+r.total_bono,0))},
+              {label:'Colaboradoras',value:resultados.resultados.length},
+              {label:'Tiendas ≥100% meta',value:`${Object.values(resultados.storeResults).filter(s=>s.cumplimiento>=1).length} / ${config.tiendas.length}`},
+              {label:'Promedio cumplimiento',value:pct(Object.values(resultados.storeResults).reduce((s,r)=>s+r.cumplimiento,0)/Math.max(config.tiendas.length,1))},
+            ].map(m=><div key={m.label} className="metric-card"><div className="metric-label">{m.label}</div><div className="metric-value">{m.value}</div></div>)}
+          </div>
+
+          {/* Tabla tiendas */}
+          <div className="card">
+            <h3>Resultados por tienda</h3>
+            <div className="table-scroll">
+              <table className="res-table">
+                <thead><tr><th>Tienda</th><th>Tipo</th><th>Meta</th><th>Real</th><th>Cumpl.</th><th>Tier</th></tr></thead>
+                <tbody>
+                  {Object.values(resultados.storeResults).sort((a,b)=>a.tienda.nombre.localeCompare(b.tienda.nombre)).map(sr=>(
+                    <tr key={sr.tienda.id}>
+                      <td className="bold">{sr.tienda.nombre}</td>
+                      <td><span style={{fontSize:10,padding:'2px 7px',borderRadius:10,background:sr.tipo==='grande'?'#1e3a5f':sr.tipo==='mediana'?'#1a3a2a':'#3a1a1a',color:sr.tipo==='grande'?'#93c5fd':sr.tipo==='mediana'?'#86efac':'#fca5a5'}}>{sr.tipo}</span></td>
+                      <td>{fmt(sr.meta)}</td>
+                      <td>{fmt(sr.ventaReal)}</td>
+                      <td><span className={`badge ${badge(sr.cumplimiento,sr.tipo)}`}>{pct(sr.cumplimiento)}</span></td>
+                      <td style={{fontSize:11,color:'#9CA3AF'}}>{tierLabel(sr.cumplimiento,sr.tipo)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Tabla bonos colaboradoras */}
+          <div className="card">
+            <h3>Bonos por colaboradora</h3>
+            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>
+              S/2,000 total = <span style={{color:'#818CF8'}}>70% individual (S/1,400)</span> + <span style={{color:'#34D399'}}>30% empresa (S/600)</span> — proporcional a horas trabajadas
+            </div>
+            <div className="table-scroll">
+              <table className="res-table">
+                <thead><tr><th>Colaboradora</th><th>Tiendas</th><th>Horas</th><th style={{color:'#818CF8'}}>Individual 70%</th><th style={{color:'#34D399'}}>Empresa 30%</th><th>TOTAL</th></tr></thead>
+                <tbody>
+                  {resultados.resultados.map(r=>(
+                    <tr key={r.empleada_id}>
+                      <td className="bold">{r.nombre}</td>
+                      <td style={{fontSize:10}}>{r.tiendas.map(t=><span key={t} className="pill">{t}</span>)}</td>
+                      <td style={{textAlign:'center'}}>{r.horas_total}</td>
+                      <td style={{textAlign:'right',color:'#818CF8'}}>{fmt(r.bono_individual)}</td>
+                      <td style={{textAlign:'right',color:'#34D399'}}>{fmt(r.bono_empresa)}</td>
+                      <td><strong className="total-bono">{fmt(r.total_bono)}</strong></td>
+                    </tr>
+                  ))}
+                  <tr className="total-row">
+                    <td colSpan={3}>TOTAL A PAGAR</td>
+                    <td style={{textAlign:'right',color:'#818CF8'}}>{fmt(resultados.resultados.reduce((s,r)=>s+r.bono_individual,0))}</td>
+                    <td style={{textAlign:'right',color:'#34D399'}}>{fmt(resultados.resultados.reduce((s,r)=>s+r.bono_empresa,0))}</td>
+                    <td><strong>{fmt(resultados.resultados.reduce((s,r)=>s+r.total_bono,0))}</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="card-footer standalone">
+            <button className="btn" onClick={()=>goStep(2)}>← Ajustar horarios</button>
+            <button className="btn primary" onClick={()=>goStep(4)}>Exportar →</button>
+          </div>
         </div>
       )}
 
       {step===4&&(
         <div className="panel"><div className="card">
           <h3>Exportar resultados — {mes}</h3>
-          <div className="export-options"><div className="export-item" onClick={exportarExcel}><div className="export-icon green">↓</div><div><div className="export-title">Excel para RR.HH.</div><div className="export-sub">Todas las colaboradoras · desglose completo · listo para procesar pago</div></div><span className="export-ext green">.xlsx</span></div></div>
+          <div className="export-options"><div className="export-item" onClick={exportarExcel}><div className="export-icon green">↓</div><div><div className="export-title">Excel para RR.HH.</div><div className="export-sub">Individual 70% + Empresa 30% · todas las colaboradoras · listo para pago</div></div><span className="export-ext green">.xlsx</span></div></div>
           <div className="success-banner"><div className="success-dot"/><div><div className="success-title">Resultados guardados en Supabase</div><div className="success-sub">Historico disponible desde cualquier dispositivo</div></div></div>
           <div className="card-footer"><span className="hint-small purple">Proximo mes: solo sube el Excel</span><button className="btn" onClick={()=>{setStep(0);setRawRows([]);setResultados(null);setVentasPorId({})}}>Nuevo mes</button></div>
         </div></div>
