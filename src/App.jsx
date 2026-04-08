@@ -27,7 +27,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
   return (
     <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'[OK]':icon}</span>
+        <span style={{fontSize:28}}>{done?'\u2705':icon}</span>
         <div>
           <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#fff'}}>{title}</div>
           <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
@@ -35,7 +35,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
       </div>
       {hint && <div style={{fontSize:11,color:'#6B7280',marginBottom:10,fontStyle:'italic'}}>{hint}</div>}
       {done
-        ? <div style={{fontSize:12,color:'#86efac'}}>[OK] {fileName}</div>
+        ? <div style={{fontSize:12,color:'#86efac'}}>{fileName}</div>
         : <label style={{background:'#4F46E5',color:'#fff',borderRadius:6,padding:'8px 18px',fontSize:12,cursor:'pointer',display:'inline-block'}}>
             Seleccionar archivo
             <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>{onFile(e.target.files[0]);e.target.value='';}}/>
@@ -349,7 +349,7 @@ export default function App() {
             </div>
           </div>
           <div>
-            <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:8}}>Rating Google Reviews por tienda</strong>
+            <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:4}}>Rating Google Reviews por tienda</strong>
             <p style={{color:'#aaa',fontSize:11,marginBottom:8}}>Mayor a 4.0 = +S/10 | Menor a 4.0 = -S/5 | Sin dato = S/0</p>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
               {config.tiendas.map(t=>(
@@ -371,8 +371,8 @@ export default function App() {
           <h3 style={{marginBottom:6}}>Subir archivos del mes {mes}</h3>
           <p className="hint">Sube los dos archivos para calcular los bonos automaticamente.</p>
           <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
-            <UploadCard title="1. Ventas mensual" subtitle="Archivo Excel de ventas por tienda" hint="Col B = tienda  Col G = ventas del mes  Col J = meta" icon="[XLS]" onFile={parsearVentas} fileName={ventasFile} done={!!ventasData} status={ventasData ? ` ${Object.keys(ventasData).length} tiendas leidas` : ''}/>
-            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="[XLS]" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
+            <UploadCard title="1. Ventas mensual" subtitle="Archivo Excel de ventas por tienda" hint="Col B = tienda  Col G = ventas del mes  Col J = meta" icon="\ud83d\udcca" onFile={parsearVentas} fileName={ventasFile} done={!!ventasData} status={ventasData ? ` ${Object.keys(ventasData).length} tiendas leidas` : ''}/>
+            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="\ud83d\udcc5" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
           </div>
 
           {ventasData && (
@@ -460,7 +460,7 @@ export default function App() {
                     const sr = resultados.storeResults[t.id]
                     if (!sr) return null
                     const rv = reviews[t.id]!==''?parseFloat(reviews[t.id]):null
-                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'*':'-'
+                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'\u2605':'-'
                     return (
                       <tr key={t.id}>
                         <td className="bold">{t.nombre}</td>
@@ -486,10 +486,14 @@ export default function App() {
               <table className="res-table">
                 <thead>
                   <tr>
-                    <th>Colaboradora</th>
-                    {sortedTiendas.map(t=>(<th key={t.id} style={{fontSize:9,textAlign:'center',padding:'4px 3px'}}>{t.nombre.replace('San ','S.').replace('Juan de ','Jde ')}</th>))}
-                    <th style={{color:'#818CF8',textAlign:'center'}}>Total h.</th>
-                    <th style={{color:'#818CF8',textAlign:'right'}}>Bono ind.</th>
+                    <th style={{minWidth:110}}>Colaboradora</th>
+                    {sortedTiendas.map(t=>(
+                      <th key={t.id} style={{width:52,maxWidth:52,padding:'4px 2px',verticalAlign:'bottom',textAlign:'center'}}>
+                        <div style={{writingMode:'vertical-rl',transform:'rotate(180deg)',fontSize:10,fontWeight:600,lineHeight:1.2,maxHeight:80,overflow:'hidden',whiteSpace:'nowrap',color:'#cbd5e1'}}>{t.nombre}</div>
+                      </th>
+                    ))}
+                    <th style={{color:'#818CF8',textAlign:'center',minWidth:60}}>Total h.</th>
+                    <th style={{color:'#818CF8',textAlign:'right',minWidth:72}}>Bono ind.</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -500,7 +504,7 @@ export default function App() {
                         const colabKey = Object.keys(horariosData).find(k=>norm(k)===norm(r.nombre))||''
                         const tiendaKey = Object.keys(horariosData[colabKey]||{}).find(k=>norm(k)===norm(t.nombre))
                         const h = horariosData[colabKey]?.[tiendaKey]||0
-                        return <td key={t.id} style={{textAlign:'center',fontSize:10,color:h>0?'#fff':'#374151'}}>{h>0?h:'-'}</td>
+                        return <td key={t.id} style={{textAlign:'center',fontSize:11,fontWeight:h>0?600:400,color:h>0?'#1e293b':'#94a3b8',background:h>0?'#e0e7ff':'transparent',borderRadius:4,padding:'2px 4px'}}>{h>0?h:'-'}</td>
                       })}
                       <td style={{textAlign:'center',fontWeight:700,color:'#818CF8',fontSize:11}}>{r.horas_total}</td>
                       <td style={{textAlign:'right',fontWeight:700,color:'#818CF8',fontSize:11}}>{fmtDec(r.bono_base)}</td>
