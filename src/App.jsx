@@ -492,7 +492,7 @@ export default function App() {
                         <td className="bold" style={{fontSize:11}}>{r.nombre}</td>
                         {sorted.map(sr=>{
                           const h = horariosData?.[r.nombre]?.[sr.tienda.nombre] || 0
-                          return <td key={sr.tienda.id} style={{textAlign:'center',fontSize:10,color:h>0?'#fff':'#374151'}}>{h>0?h:'—'}</td>
+                          return <td key={sr.tienda.id} style={{textAlign:'center',fontSize:10,color:h>0?'#fff':'#374151'}}>{h>0?h:'-'}</td>
                         })}
                         <td style={{textAlign:'center',fontWeight:700,color:'#818CF8',fontSize:11}}>{r.horas_total}</td>
                         <td style={{textAlign:'right',fontWeight:700,color:'#818CF8',fontSize:11}}>{fmt(r.bono_individual)}</td>
@@ -503,7 +503,7 @@ export default function App() {
                     <td style={{fontSize:10}}>TOTAL HORAS</td>
                     {Object.values(resultados.storeResults).sort((a,b)=>a.tienda.nombre.localeCompare(b.tienda.nombre)).map(sr=>{
                       const tot = resultados.resultados.reduce((s,r)=>s+(horariosData?.[r.nombre]?.[sr.tienda.nombre]||0),0)
-                      return <td key={sr.tienda.id} style={{textAlign:'center',fontSize:10}}>{tot||'—'}</td>
+                      return <td key={sr.tienda.id} style={{textAlign:'center',fontSize:10}}>{tot||'-'}</td>
                     })}
                     <td style={{textAlign:'center',fontWeight:700}}>{resultados.resultados.reduce((s,r)=>s+r.horas_total,0)}</td>
                     <td style={{textAlign:'right',fontWeight:700,color:'#818CF8'}}>{fmt(resultados.resultados.reduce((s,r)=>s+r.bono_individual,0))}</td>
