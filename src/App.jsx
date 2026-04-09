@@ -28,9 +28,9 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
   return (
     <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'â':icon}</span>
+        <span style={{fontSize:28}}>{done?'✅':icon}</span>
         <div>
-          <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#fff'}}>{title}</div>
+          <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#1e1b4b'}}>{title}</div>
           <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
         </div>
       </div>
@@ -434,8 +434,8 @@ export default function App() {
           <h3 style={{marginBottom:6}}>Subir archivos del mes {mes}</h3>
           <p className="hint">Sube los dos archivos para calcular los bonos automaticamente.</p>
           <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
-            <UploadCard title="1. Ventas mensual" subtitle="Archivo Excel de ventas por tienda" hint="Col B = tienda  Col G = ventas del mes  Col J = meta" icon="ð" onFile={parsearVentas} fileName={ventasFile} done={!!ventasData} status={ventasData ? ` ${Object.keys(ventasData).length} tiendas leidas` : ''}/>
-            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="ð" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
+            <UploadCard title="1. Ventas mensual" subtitle="Archivo Excel de ventas por tienda" hint="Col B = tienda  Col G = ventas del mes  Col J = meta" icon="📊" onFile={parsearVentas} fileName={ventasFile} done={!!ventasData} status={ventasData ? ` ${Object.keys(ventasData).length} tiendas leidas` : ''}/>
+            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="📅" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
           </div>
 
           {ventasData && (
@@ -523,7 +523,7 @@ export default function App() {
                     const sr = resultados.storeResults[t.id]
                     if (!sr) return null
                     const rv = reviews[t.id]!==''?parseFloat(reviews[t.id]):null
-                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'â':'-'
+                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'Ã¢ÂÂ':'-'
                     return (
                       <tr key={t.id}>
                         <td className="bold">{t.nombre}</td>
