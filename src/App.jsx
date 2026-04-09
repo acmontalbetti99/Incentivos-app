@@ -28,7 +28,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
   return (
     <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'✅':icon}</span>
+        <span style={{fontSize:28}}>{done?'â':icon}</span>
         <div>
           <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#1e1b4b'}}>{title}</div>
           <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
@@ -435,8 +435,8 @@ export default function App() {
           <h3 style={{marginBottom:6}}>Subir archivos del mes {mes}</h3>
           <p className="hint">Sube los dos archivos para calcular los bonos automaticamente.</p>
           <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
-            <UploadCard title="1. Ventas mensual" subtitle="Archivo Excel de ventas por tienda" hint="Col B = tienda  Col G = ventas del mes  Col J = meta" icon="📊" onFile={parsearVentas} fileName={ventasFile} done={!!ventasData} status={ventasData ? ` ${Object.keys(ventasData).length} tiendas leidas` : ''}/>
-            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="📅" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
+            <UploadCard title="1. Ventas mensual" subtitle="Archivo Excel de ventas por tienda" hint="Col B = tienda  Col G = ventas del mes  Col J = meta" icon="ð" onFile={parsearVentas} fileName={ventasFile} done={!!ventasData} status={ventasData ? ` ${Object.keys(ventasData).length} tiendas leidas` : ''}/>
+            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="ð" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
           </div>
 
           {ventasData && (
@@ -490,12 +490,12 @@ export default function App() {
 
       {resultados && (
         <div className="panel">
-          <div style={{background:resultados.empresaAlcanzo?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.12)',border:`1px solid ${resultados.empresaAlcanzo?'#16A34A':'#DC2626'}`,borderRadius:10,padding:'14px 18px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+          <div style={{background:resultados.empresaAlcanzo?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.18)',border:`1px solid ${resultados.empresaAlcanzo?'#16A34A':'#DC2626'}`,borderRadius:10,padding:'14px 18px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
             <div>
-              <div style={{fontWeight:700,fontSize:14,color:resultados.empresaAlcanzo?'#86efac':'#fca5a5'}}>
+              <div style={{fontWeight:700,fontSize:14,color:resultados.empresaAlcanzo?'#166534':'#7f1d1d'}}>
                 {resultados.empresaAlcanzo?'META EMPRESA ALCANZADA':'Meta empresa no alcanzada'}
               </div>
-              <div style={{fontSize:12,color:'#ccc',marginTop:2}}>
+              <div style={{fontSize:12,color:resultados.empresaAlcanzo?'#14532d':'#7f1d1d',marginTop:2}}>
                 Ventas totales: <b>{fmt(resultados.totalVentasEmpresa)}</b> &middot; Meta: <b>{fmt(resultados.META_EMPRESA)}</b> &middot; {pct(resultados.pctEmpresaLogrado)}
               </div>
             </div>
@@ -524,7 +524,7 @@ export default function App() {
                     const sr = resultados.storeResults[t.id]
                     if (!sr) return null
                     const rv = reviews[t.id]!==''?parseFloat(reviews[t.id]):null
-                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'★':'-'
+                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'â':'-'
                     return (
                       <tr key={t.id}>
                         <td className="bold">{t.nombre}</td>
