@@ -30,7 +30,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
   return (
     <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'â':icon}</span>
+        <span style={{fontSize:28}}>{done?'Ã¢ÂÂ':icon}</span>
         <div>
           <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#1e1b4b'}}>{title}</div>
           <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
@@ -113,13 +113,13 @@ export default function App() {
       let lastDateCol = -1
       for (let j = 0; j < hdrCells.length; j++) {
         const v = hdrCells[j]
-        if (v instanceof Date || (typeof v === 'string' && /^Date(/.test(v))) lastDateCol = j
+        if (v instanceof Date || (typeof v === 'string' && v.indexOf('Date(') === 0)) lastDateCol = j
       }
       // gviz returns dates as Date(year,month,day) - need last two date cols
       const dateCols = []
       for (let j = 0; j < hdrCells.length; j++) {
         const v = hdrCells[j]
-        if (v instanceof Date || (typeof v === 'string' && /Date/.test(String(v)))) dateCols.push(j)
+        if (v instanceof Date || (typeof v === 'string' && String(v).indexOf('Date(') >= 0)) dateCols.push(j)
       }
       const colVentas = dateCols.length > 0 ? dateCols[dateCols.length - 1] : -1
       const colVentaAnt = dateCols.length > 1 ? dateCols[dateCols.length - 2] : -1
@@ -477,7 +477,7 @@ export default function App() {
                 : <div style={{fontSize:11,color:'#166534'}}>{Object.keys(ventasData).length} tiendas leidas &middot; <span style={{cursor:'pointer',textDecoration:'underline'}} onClick={()=>{setVentasData(null);setVentasFile(null)}}>cambiar</span></div>
               }
             </div>
-            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="ð" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
+            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="Ã°ÂÂÂ" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
           </div>
 
           {ventasData && (
@@ -565,7 +565,7 @@ export default function App() {
                     const sr = resultados.storeResults[t.id]
                     if (!sr) return null
                     const rv = reviews[t.id]!==''?parseFloat(reviews[t.id]):null
-                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'â':'-'
+                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'Ã¢ÂÂ':'-'
                     return (
                       <tr key={t.id}>
                         <td className="bold">{t.nombre}</td>
