@@ -1,11 +1,4 @@
-// v3 - tip
-
-  // Auto-load ventas from Google Sheets whenever mes changes
-  useEffect(() => {
-    setVentasData(null)
-    setVentasFile(null)
-    cargarVentasDesdeSheets(mes)
-  }, [mes])o badges fix
+// v3 - tipo badges fix
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, loadConfig, saveHorarios, saveResultados, saveVentasMes } from './lib/supabase'
@@ -86,6 +79,12 @@ export default function App() {
     }).catch(e => setError('Error al conectar: '+e.message))
   }, [])
 
+  useEffect(() => {
+    setVentasData(null)
+    setVentasFile(null)
+    cargarVentasDesdeSheets(mes)
+  }, [mes])
+
   function setMsg(txt,ok=true){setConfigMsg(txt);setConfigMsgOk(ok)}
 
   function openConfig() {
@@ -103,7 +102,7 @@ export default function App() {
       const url = 'https://docs.google.com/spreadsheets/d/' + VENTAS_SHEET_ID + '/gviz/tq?tqx=out:json&sheet=' + encodeURIComponent(mesNombre)
       const resp = await fetch(url)
       const text = await resp.text()
-      // gviz wraps response — strip the wrapper safely
+      // gviz wraps response -- strip the wrapper safely
       const jsonStart = text.indexOf('{')
       const jsonEnd = text.lastIndexOf('}')
       if (jsonStart < 0 || jsonEnd < 0) { setError('No se encontro hoja ' + mesNombre + ' en Google Sheets'); setVentasFile(null); return }
