@@ -1,0 +1,9 @@
+{
+  "name": "sync-sheets",
+  "version": "1.0.0",
+  "dependencies": {
+    "google-auth-library": "^9.0.0",
+    "googleapis": "^140.0.0",
+    "@supabase/supabase-js": "^2.0.0"
+  }
+}
