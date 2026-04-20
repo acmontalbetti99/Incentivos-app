@@ -13,8 +13,6 @@ const BONO_MAX = 500
 const VENTA_MIN = 30000
 const CRECIMIENTO_MIN = 0.01
 const VENTAS_SHEET_ID = '1lQXdKtkh5kdGS52SgJ6w0GiLIzyrHzph'
-const HORARIOS_SHEET_ID = '1XLPIqlAkeGblhENSm-3sGB4U6ZN6Qkia'
-const MESES_ES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SETIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE']
 const MESES_ES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SETIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE']
 
 const S = {
@@ -55,7 +53,6 @@ export default function App() {
   const [mes, setMes] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` })
   const [config, setConfig] = useState(null)
   const [error, setError] = useState('')
-  const [syncStatus, setSyncStatus] = useState('Cargando...')
   const [loading, setLoading] = useState(false)
 
   const [ventasFile, setVentasFile] = useState(null)
@@ -83,7 +80,9 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    cargarDesdeSheets(mes)
+    setVentasData(null)
+    setVentasFile(null)
+    cargarVentasDesdeSheets(mes)
   }, [mes])
 
   function setMsg(txt,ok=true){setConfigMsg(txt);setConfigMsgOk(ok)}
@@ -94,77 +93,190 @@ export default function App() {
     setNewTienda(''); setNewEmpleada(''); setConfigMsg(''); setShowConfig(true)
   }
 
-  async function cargarDesdeSheets(mesParam) {
-    const m = mesParam || mes
-    const mesNombre = MESES_ES[parseInt(m.split('-')[1]) - 1]
+  async function cargarVentasDesdeSheets(mesParam) {
+    const mesActual = mesParam || mes
+    const mesNombre = MESES_ES[parseInt(mesActual.split('-')[1]) - 1]
+    setVentasFile('Google Sheets: ' + mesNombre)
     setError('')
-    setVentasData(null)
-    setHorariosData(null)
-    setSyncStatus('Sincronizando...')
-    const fetchGviz = async (sheetId, sheetName) => {
-      const url = 'https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?tqx=out:json&sheet=' + encodeURIComponent(sheetName)
+    try {
+      const url = 'https://docs.google.com/spreadsheets/d/' + VENTAS_SHEET_ID + '/gviz/tq?tqx=out:json&sheet=' + encodeURIComponent(mesNombre)
       const resp = await fetch(url)
       const text = await resp.text()
-      const j1 = text.indexOf('{'), j2 = text.lastIndexOf('}')
-      if (j1 < 0) throw new Error('Hoja "' + sheetName + '" no encontrada')
-      return JSON.parse(text.substring(j1, j2 + 1))
-    }
-    const pn = (cell) => { if (!cell || cell.v === null) return 0; return typeof cell.v === 'number' ? cell.v : parseFloat(String(cell.v).replace(/[^0-9.-]/g,'')) || 0 }
-    try {
-      const gdata = await fetchGviz(VENTAS_SHEET_ID, mesNombre)
+      const jsonStart = text.indexOf('{')
+      const jsonEnd = text.lastIndexOf('}')
+      if (jsonStart < 0) { setError('Hoja ' + mesNombre + ' no encontrada en Google Sheets'); setVentasFile(null); return }
+      const gdata = JSON.parse(text.substring(jsonStart, jsonEnd + 1))
+      const cols = gdata.table.cols || []
       const rows = gdata.table.rows || []
-      const hdr = (rows[0]?.c || []).map(c => c ? c.v : null)
-      let colTienda = -1, colMeta = -1
+
+      // Use cols metadata to find column indices
+      // col types: 'string' = text, 'number' = number, 'date' = date
+      // Find tienda col (string col containing TIENDAS label or first string col)
+      let colTienda = -1
       const dateCols = []
-      for (let j = 0; j < hdr.length; j++) {
-        const v = hdr[j]
-        if (typeof v === 'string' && v.trim().toUpperCase() === 'TIENDAS') colTienda = j
-        if (typeof v === 'number' && v > 40000 && v < 50000) dateCols.push(j)
+      let colMeta = -1
+
+      for (let j = 0; j < cols.length; j++) {
+        const col = cols[j]
+        const lbl = String(col.label || '').trim().toUpperCase()
+        if (col.type === 'string' && lbl === 'TIENDAS') colTienda = j
+        if (col.type === 'date') dateCols.push(j)
       }
-      if (colTienda < 0) colTienda = 1
-      for (let j = 0; j < hdr.length; j++) {
-        const v = String(hdr[j]||'').toLowerCase()
-        if (v.includes('meta') && !v.includes('total')) { colMeta = j; break }
+      // Fallback: first string col is tienda
+      if (colTienda < 0) colTienda = cols.findIndex(c => c.type === 'string')
+
+      // Find meta col: number col after date cols whose label contains 'meta' (case insensitive, not 'total')
+      for (let j = 0; j < cols.length; j++) {
+        const lbl = String(cols[j].label || '').toLowerCase()
+        if (lbl.includes('meta') && !lbl.includes('total')) { colMeta = j; break }
       }
+
+      // Last two date cols = ventaAnt, ventaReal
       const colVentas = dateCols.length > 0 ? dateCols[dateCols.length - 1] : -1
       const colVentaAnt = dateCols.length > 1 ? dateCols[dateCols.length - 2] : -1
-      if (colVentas < 0) throw new Error('No se detectaron columnas de fecha en ' + mesNombre)
-      const vdata = {}
-      for (let i = 1; i < rows.length; i++) {
+
+      if (colTienda < 0 || colVentas < 0) {
+        setError('No se pudo detectar columnas en hoja ' + mesNombre + ' (tienda=' + colTienda + ' ventas=' + colVentas + ')')
+        return
+      }
+
+      const parseNum = (cell) => {
+        if (!cell || cell.v === null || cell.v === undefined) return 0
+        if (typeof cell.v === 'number') return cell.v
+        return parseFloat(String(cell.v).replace(/[^0-9.-]/g, '')) || 0
+      }
+
+      const data = {}
+      // Skip header row (row 0 has TIENDAS label), start from row 1
+      for (let i = 0; i < rows.length; i++) {
         const cells = rows[i].c || []
-        const nombre = String(cells[colTienda]?.v||'').trim()
+        const nombreCell = cells[colTienda]
+        const nombre = String(nombreCell ? (nombreCell.v || '') : '').trim()
         if (!nombre) continue
-        const nu = nombre.toUpperCase()
-        if (['TIENDAS','TOTAL'].includes(nu) || nu.includes('META')) continue
-        const ventaReal = pn(cells[colVentas])
-        let ventaAnt = colVentaAnt >= 0 ? pn(cells[colVentaAnt]) : 0
-        if (ventaAnt === 0 && colVentas > 0) { const av = pn(cells[colVentas-1]); if (av > 0) ventaAnt = av }
-        const metaAbs = colMeta >= 0 ? pn(cells[colMeta]) : 0
-        if (ventaReal > 0 || ventaAnt > 0 || metaAbs > 0) vdata[nu] = { ventaReal, metaAbs, ventaAnt, nombreOriginal: nombre }
+        const nombreU = nombre.toUpperCase()
+        if (['TIENDAS', 'TOTAL'].includes(nombreU) || nombreU.includes('META')) continue
+
+        const ventaReal = parseNum(cells[colVentas])
+        let ventaAnt = colVentaAnt >= 0 ? parseNum(cells[colVentaAnt]) : 0
+        // If ventaAnt is 0 but previous numeric col has value, use it (El Refugio case)
+        if (ventaAnt === 0 && colVentas > 0) {
+          const altVal = parseNum(cells[colVentas - 1])
+          if (altVal > 0) ventaAnt = altVal
+        }
+        const metaAbs = colMeta >= 0 ? parseNum(cells[colMeta]) : 0
+
+        if (ventaReal > 0 || ventaAnt > 0 || metaAbs > 0) {
+          data[nombreU] = { ventaReal, metaAbs, ventaAnt, nombreOriginal: nombre }
+        }
       }
-      setVentasData(vdata)
-    } catch(err) { setError('Ventas: ' + err.message) }
-    try {
-      const gdata = await fetchGviz(HORARIOS_SHEET_ID, 'Resumen Mensual')
-      const rows = gdata.table.rows || []
-      const hdr = (rows[0]?.c || []).map(c => c ? String(c.v||'').toLowerCase() : '')
-      let colColab = hdr.findIndex(v => v.includes('colabor'))
-      let colTienda = hdr.findIndex(v => v.includes('tienda'))
-      let colHoras = hdr.findIndex(v => v.includes('hora'))
-      if (colColab < 0) colColab = 0; if (colTienda < 0) colTienda = 1; if (colHoras < 0) colHoras = 2
-      const hdata = {}
-      for (let i = 1; i < rows.length; i++) {
-        const cells = rows[i].c || []
-        const colab = String(cells[colColab]?.v||'').trim()
-        const tienda = String(cells[colTienda]?.v||'').trim()
-        const horas = pn(cells[colHoras])
-        if (!colab || !tienda || horas <= 0) continue
-        if (!hdata[colab]) hdata[colab] = {}
-        hdata[colab][norm(tienda)] = (hdata[colab][norm(tienda)] || 0) + horas
+      if (Object.keys(data).length === 0) {
+        setError('No se encontraron tiendas con datos en hoja ' + mesNombre)
+        return
       }
-      setHorariosData(hdata)
-    } catch(err) { setError(e => (e ? e + ' | ' : '') + 'Horarios: ' + err.message) }
-    setSyncStatus('Sync ' + new Date().toLocaleTimeString('es-PE', {hour:'2-digit',minute:'2-digit'}))
+      setVentasData(data)
+      setError('')
+    } catch(err) {
+      setError('Error Google Sheets: ' + err.message)
+      setVentasFile(null)
+    }
+  }
+  function parsearHorarios(file) {
+    setHorariosFile(file.name)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type:'array' })
+        const data = {}
+
+        // Detect format A: sheets named "Dia N"
+        const daySheets = wb.SheetNames.filter(n => /^Dia \d+$/i.test(n.trim()))
+        const isRowPerShift = daySheets.length >= 1
+
+        if (isRowPerShift) {
+          // FORMAT A: each day sheet has rows [Fecha, Colaborador/a, Tienda, Horas, Notas]
+          for (const sheetName of daySheets) {
+            const ws = wb.Sheets[sheetName]
+            const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
+            // Find header row: look for row with "Colaborador" in any cell
+            let hdrIdx = -1
+            for (let i = 0; i < rawRows.length; i++) {
+              const row = rawRows[i] || []
+              if (row.some(c => String(c||'').toLowerCase().includes('colaborador'))) {
+                hdrIdx = i; break
+              }
+            }
+            if (hdrIdx < 0) continue
+            const hdrs = (rawRows[hdrIdx] || []).map(h => norm(String(h||'')))
+            const colColab  = hdrs.findIndex(h => h.includes('colaborador'))
+            const colTienda = hdrs.findIndex(h => h.includes('tienda'))
+            const colHoras  = hdrs.findIndex(h => h.includes('hora'))
+            if (colColab < 0 || colTienda < 0 || colHoras < 0) continue
+
+            for (let i = hdrIdx + 1; i < rawRows.length; i++) {
+              const row = rawRows[i] || []
+              const colab  = String(row[colColab]  || '').trim()
+              const tienda = String(row[colTienda] || '').trim()
+              const horas  = parseFloat(row[colHoras]) || 0
+              if (!colab || !tienda || horas <= 0) continue
+              if (!data[colab]) data[colab] = {}
+              data[colab][tienda] = (data[colab][tienda] || 0) + horas
+            }
+          }
+          setHorariosData(data)
+          setError('')
+        } else {
+          // FORMAT B/C: single sheet legacy (matrix or row-per-shift)
+          const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('resumen') || n.toLowerCase().includes('mensual')) || wb.SheetNames[0]
+          const ws = wb.Sheets[sheetName]
+          const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
+          // Detect if it is row-per-shift (has a "Tienda" column) or matrix
+          let hdrIdx = -1
+          for (let i = 0; i < rawRows.length; i++) {
+            const row = rawRows[i] || []
+            if (row.some(c => String(c||'').toLowerCase().includes('colaborador'))) {
+              hdrIdx = i; break
+            }
+          }
+          if (hdrIdx < 0) { setError('No se encontro fila de encabezado en horarios.'); return }
+          const hdrs = (rawRows[hdrIdx] || []).map(h => norm(String(h||'')))
+          const hasTiendaCol = hdrs.some(h => h === 'tienda')
+
+          if (hasTiendaCol) {
+            // Row-per-shift single sheet
+            const colColab  = hdrs.findIndex(h => h.includes('colaborador'))
+            const colTienda = hdrs.findIndex(h => h === 'tienda')
+            const colHoras  = hdrs.findIndex(h => h.includes('hora'))
+            for (let i = hdrIdx + 1; i < rawRows.length; i++) {
+              const row = rawRows[i] || []
+              const colab  = String(row[colColab]  || '').trim()
+              const tienda = String(row[colTienda] || '').trim()
+              const horas  = parseFloat(row[colHoras]) || 0
+              if (!colab || !tienda || horas <= 0) continue
+              if (!data[colab]) data[colab] = {}
+              data[colab][tienda] = (data[colab][tienda] || 0) + horas
+            }
+          } else {
+            // Legacy matrix format
+            const colNames = rawRows[hdrIdx].map(h => String(h||'').trim())
+            for (let i = hdrIdx + 1; i < rawRows.length; i++) {
+              const row = rawRows[i]
+              const nombre = String(row[0]||'').trim()
+              if (!nombre || nombre.toUpperCase().includes('TOTAL')) continue
+              data[nombre] = {}
+              for (let j = 1; j < colNames.length; j++) {
+                const colName = colNames[j]
+                if (!colName || colName.toUpperCase().includes('TOTAL')) continue
+                const h = parseFloat(row[j]) || 0
+                if (h > 0) data[nombre][colName] = h
+              }
+            }
+          }
+          setHorariosData(data)
+          setError('')
+        }
+      } catch(err) { setError('Error al leer horarios: '+err.message) }
+    }
+    reader.readAsArrayBuffer(file)
   }
   function calcularBonosLocal() {
     if (!ventasData || !horariosData || !config) return null
@@ -366,24 +478,74 @@ export default function App() {
       {error && <div className="error-bar">{error}<button onClick={()=>setError('')}>x</button></div>}
 
       <div className="panel">
-        <div className="card" style={{padding:'16px 20px'}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12}}>
-            <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <span style={{fontSize:20}}>{ventasData && horariosData ? '\u2705' : '\u23f3'}</span>
-              <div>
-                <div style={{fontWeight:700,fontSize:13,color:'#1e1b4b'}}>{ventasData && horariosData ? 'Datos sincronizados' : 'Sincronizando...'}</div>
-                <div style={{fontSize:11,color:'#9CA3AF'}}>{syncStatus}</div>
+        <div className="card">
+          <h3 style={{marginBottom:6}}>Subir archivos del mes {mes}</h3>
+          <p className="hint">Sube los dos archivos para calcular los bonos automaticamente.</p>
+          <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
+            <div style={{background:ventasData?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:'2px solid '+(ventasData?'#16A34A':'rgba(79,70,229,0.3)'),borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+                <span style={{fontSize:28}}>{ventasData?'\u2705':'\u1F4CA'}</span>
+                <div>
+                  <div style={{fontWeight:700,fontSize:13,color:ventasData?'#166534':'#1e1b4b'}}>1. Ventas mensual</div>
+                  <div style={{fontSize:11,color:'#9CA3AF'}}>{ventasData ? ventasFile : 'Cargando...'}</div>
+                </div>
+              </div>
+              {ventasData && <div style={{fontSize:11,color:'#166534'}}>{Object.keys(ventasData).length} tiendas leidas</div>}
+            </div>
+            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="&#x1f4c5;" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
+          </div>
+
+          {ventasData && (
+            <div style={{marginTop:16}}>
+              <div style={{fontSize:12,fontWeight:600,color:'#9FE1CB',marginBottom:8}}>Vista previa ventas por tienda:</div>
+              <div className="ventas-summary">
+                {config.tiendas.map(tienda => {
+                  const match = Object.keys(ventasData).find(k => norm(k) === norm(tienda.nombre))
+                  const d = match ? ventasData[match] : null
+                  const venta = d?.ventaReal || 0
+                  const meta = d?.metaAbs || tienda.meta_actual || (tienda.venta_ant * (1 + (tienda.crec_obj||0.05)))
+                  const p = meta > 0 ? venta / meta : 0
+                  return (
+                    <div key={tienda.id} className="tienda-chip">
+                      <div className="tienda-name">{tienda.nombre}</div>
+                      <div className="tienda-total">{fmt(venta)}</div>
+                      <div className={`tienda-pct ${p>=1?'green':p>=0.8?'amber':venta>0?'red':''}`}>{venta>0?`${(p*100).toFixed(0)}%`:''}</div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
-            <button onClick={()=>cargarDesdeSheets(mes)}
-              style={{background:'#4F46E5',color:'#fff',borderRadius:6,padding:'7px 16px',fontSize:12,cursor:'pointer',border:'none',fontWeight:600}}>
-              &#x1f504; Actualizar
+          )}
+
+          {ventasData && config && (()=>{
+            const sinMatch = Object.keys(ventasData).filter(k => !config.tiendas.find(t => norm(t.nombre) === norm(k)))
+            return sinMatch.length > 0 ? (
+              <div className="info-card amber" style={{marginTop:10}}>
+                Estas tiendas del Excel no coinciden con el sistema: <strong>{sinMatch.join(', ')}</strong><br/>
+                <span style={{fontSize:11}}>Usa Config para ajustar los nombres.</span>
+              </div>
+            ) : null
+          })()}
+
+          {horariosData && config && (()=>{
+            const sinMatch = Object.keys(horariosData).filter(k => !config.empleadas.find(e => norm(e.nombre) === norm(k)))
+            return sinMatch.length > 0 ? (
+              <div className="info-card amber" style={{marginTop:8}}>
+                Estas colaboradoras del Excel no coinciden: <strong>{sinMatch.join(', ')}</strong>
+              </div>
+            ) : null
+          })()}
+
+          <div style={{marginTop:20,display:'flex',justifyContent:'flex-end'}}>
+            <button className="btn primary" style={{fontSize:14,padding:'10px 28px'}} onClick={calcular} disabled={loading || !ventasData || !horariosData}>
+              {loading ? 'Calculando...' : (ventasData && horariosData ? 'Calcular bonos' : 'Sube los dos archivos para continuar')}
             </button>
           </div>
-          {error && <div style={{marginTop:10,padding:'8px 12px',background:'#fef2f2',borderRadius:6,color:'#7f1d1d',fontSize:12}}>{error}</div>}
         </div>
       </div>
-      <div className="panel">
+
+      {resultados && (
+        <div className="panel">
           <div style={{background:resultados.empresaAlcanzo?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.18)',border:`1px solid ${resultados.empresaAlcanzo?'#16A34A':'#DC2626'}`,borderRadius:10,padding:'14px 18px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
             <div>
               <div style={{fontWeight:700,fontSize:14,color:resultados.empresaAlcanzo?'#166534':'#7f1d1d'}}>
