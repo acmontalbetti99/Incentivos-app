@@ -30,7 +30,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
   return (
     <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'&#x2705;':icon}</span>
+        <span style={{fontSize:28}}>{done?'\u2705':icon}</span>
         <div>
           <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#1e1b4b'}}>{title}</div>
           <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
@@ -102,60 +102,63 @@ export default function App() {
       const url = 'https://docs.google.com/spreadsheets/d/' + VENTAS_SHEET_ID + '/gviz/tq?tqx=out:json&sheet=' + encodeURIComponent(mesNombre)
       const resp = await fetch(url)
       const text = await resp.text()
-      // gviz wraps response -- strip the wrapper safely
       const jsonStart = text.indexOf('{')
       const jsonEnd = text.lastIndexOf('}')
-      if (jsonStart < 0 || jsonEnd < 0) { setError('No se encontro hoja ' + mesNombre + ' en Google Sheets'); setVentasFile(null); return }
+      if (jsonStart < 0) { setError('Hoja ' + mesNombre + ' no encontrada en Google Sheets'); setVentasFile(null); return }
       const gdata = JSON.parse(text.substring(jsonStart, jsonEnd + 1))
+      const cols = gdata.table.cols || []
       const rows = gdata.table.rows || []
 
-      // Find header row (contains TIENDAS)
-      let hdrIdx = -1
-      for (let i = 0; i < rows.length; i++) {
-        const cells = rows[i].c || []
-        if (cells.some(c => c && String(c.v||'').trim().toUpperCase() === 'TIENDAS')) { hdrIdx = i; break }
-      }
-      if (hdrIdx < 0) { setError('No se encontro cabecera TIENDAS en hoja ' + mesNombre); return }
-
-      const hdrCells = (rows[hdrIdx].c || []).map(c => c ? c.v : null)
-      const colTienda = hdrCells.findIndex(v => String(v||'').trim().toUpperCase() === 'TIENDAS')
-
-      // Find all date columns (gviz returns dates as Date(y,m,d) strings or Date objects)
+      // Use cols metadata to find column indices
+      // col types: 'string' = text, 'number' = number, 'date' = date
+      // Find tienda col (string col containing TIENDAS label or first string col)
+      let colTienda = -1
       const dateCols = []
-      for (let j = 0; j < hdrCells.length; j++) {
-        const v = hdrCells[j]
-        if (v && (v instanceof Date || /^Date\(/.test(String(v)))) dateCols.push(j)
+      let colMeta = -1
+
+      for (let j = 0; j < cols.length; j++) {
+        const col = cols[j]
+        const lbl = String(col.label || '').trim().toUpperCase()
+        if (col.type === 'string' && lbl === 'TIENDAS') colTienda = j
+        if (col.type === 'date') dateCols.push(j)
       }
+      // Fallback: first string col is tienda
+      if (colTienda < 0) colTienda = cols.findIndex(c => c.type === 'string')
+
+      // Find meta col: number col after date cols whose label contains 'meta' (case insensitive, not 'total')
+      for (let j = 0; j < cols.length; j++) {
+        const lbl = String(cols[j].label || '').toLowerCase()
+        if (lbl.includes('meta') && !lbl.includes('total')) { colMeta = j; break }
+      }
+
+      // Last two date cols = ventaAnt, ventaReal
       const colVentas = dateCols.length > 0 ? dateCols[dateCols.length - 1] : -1
       const colVentaAnt = dateCols.length > 1 ? dateCols[dateCols.length - 2] : -1
 
-      // Find meta col
-      let colMeta = -1
-      for (let j = 0; j < hdrCells.length; j++) {
-        const v = String(hdrCells[j]||'').toLowerCase()
-        if (v.includes('meta') && !v.includes('total')) { colMeta = j; break }
+      if (colTienda < 0 || colVentas < 0) {
+        setError('No se pudo detectar columnas en hoja ' + mesNombre + ' (tienda=' + colTienda + ' ventas=' + colVentas + ')')
+        return
       }
 
-      if (colTienda < 0 || colVentas < 0) { setError('No se pudo detectar columnas en hoja ' + mesNombre); return }
+      const parseNum = (cell) => {
+        if (!cell || cell.v === null || cell.v === undefined) return 0
+        if (typeof cell.v === 'number') return cell.v
+        return parseFloat(String(cell.v).replace(/[^0-9.-]/g, '')) || 0
+      }
 
       const data = {}
-      for (let i = hdrIdx + 1; i < rows.length; i++) {
+      // Skip header row (row 0 has TIENDAS label), start from row 1
+      for (let i = 0; i < rows.length; i++) {
         const cells = rows[i].c || []
         const nombreCell = cells[colTienda]
         const nombre = String(nombreCell ? (nombreCell.v || '') : '').trim()
         if (!nombre) continue
         const nombreU = nombre.toUpperCase()
-        if (['TIENDAS','TOTAL'].includes(nombreU) || nombreU.includes('META')) continue
-
-        const parseNum = (cell) => {
-          if (!cell) return 0
-          const v = cell.v
-          if (typeof v === 'number') return v
-          return parseFloat(String(v||'').replace(/[^0-9.-]/g,'')) || 0
-        }
+        if (['TIENDAS', 'TOTAL'].includes(nombreU) || nombreU.includes('META')) continue
 
         const ventaReal = parseNum(cells[colVentas])
         let ventaAnt = colVentaAnt >= 0 ? parseNum(cells[colVentaAnt]) : 0
+        // If ventaAnt is 0 but previous numeric col has value, use it (El Refugio case)
         if (ventaAnt === 0 && colVentas > 0) {
           const altVal = parseNum(cells[colVentas - 1])
           if (altVal > 0) ventaAnt = altVal
@@ -165,6 +168,10 @@ export default function App() {
         if (ventaReal > 0 || ventaAnt > 0 || metaAbs > 0) {
           data[nombreU] = { ventaReal, metaAbs, ventaAnt, nombreOriginal: nombre }
         }
+      }
+      if (Object.keys(data).length === 0) {
+        setError('No se encontraron tiendas con datos en hoja ' + mesNombre)
+        return
       }
       setVentasData(data)
       setError('')
@@ -477,7 +484,7 @@ export default function App() {
           <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
             <div style={{background:ventasData?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:'2px solid '+(ventasData?'#16A34A':'rgba(79,70,229,0.3)'),borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
-                <span style={{fontSize:28}}>{ventasData?'&#x2705;':'&#x1f4ca;'}</span>
+                <span style={{fontSize:28}}>{ventasData?'\u2705':'\u1F4CA'}</span>
                 <div>
                   <div style={{fontWeight:700,fontSize:13,color:ventasData?'#166534':'#1e1b4b'}}>1. Ventas mensual</div>
                   <div style={{fontSize:11,color:'#9CA3AF'}}>{ventasData ? ventasFile : 'Cargando...'}</div>
