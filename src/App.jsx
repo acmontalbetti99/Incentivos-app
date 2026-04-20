@@ -1,4 +1,11 @@
-// v3 - tipo badges fix
+// v3 - tip
+
+  // Auto-load ventas from Google Sheets whenever mes changes
+  useEffect(() => {
+    setVentasData(null)
+    setVentasFile(null)
+    cargarVentasDesdeSheets(mes)
+  }, [mes])o badges fix
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, loadConfig, saveHorarios, saveResultados, saveVentasMes } from './lib/supabase'
@@ -30,7 +37,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
   return (
     <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'Ã¢ÂÂ':icon}</span>
+        <span style={{fontSize:28}}>{done?'&#x2705;':icon}</span>
         <div>
           <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#1e1b4b'}}>{title}</div>
           <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
@@ -87,44 +94,43 @@ export default function App() {
     setNewTienda(''); setNewEmpleada(''); setConfigMsg(''); setShowConfig(true)
   }
 
-  async function cargarVentasDesdeSheets() {
-    const mesNombre = MESES_ES[parseInt(mes.split('-')[1]) - 1]
+  async function cargarVentasDesdeSheets(mesParam) {
+    const mesActual = mesParam || mes
+    const mesNombre = MESES_ES[parseInt(mesActual.split('-')[1]) - 1]
     setVentasFile('Google Sheets: ' + mesNombre)
     setError('')
     try {
       const url = 'https://docs.google.com/spreadsheets/d/' + VENTAS_SHEET_ID + '/gviz/tq?tqx=out:json&sheet=' + encodeURIComponent(mesNombre)
       const resp = await fetch(url)
       const text = await resp.text()
-      const clean = text.replace('/*O_o*/\ngoogle.visualization.Query.setResponse(','').replace(');','')
-      const gdata = JSON.parse(clean)
-      const rows = gdata.table.rows
+      // gviz wraps response — strip the wrapper safely
+      const jsonStart = text.indexOf('{')
+      const jsonEnd = text.lastIndexOf('}')
+      if (jsonStart < 0 || jsonEnd < 0) { setError('No se encontro hoja ' + mesNombre + ' en Google Sheets'); setVentasFile(null); return }
+      const gdata = JSON.parse(text.substring(jsonStart, jsonEnd + 1))
+      const rows = gdata.table.rows || []
 
-      // Find header row (contains 'TIENDAS')
+      // Find header row (contains TIENDAS)
       let hdrIdx = -1
       for (let i = 0; i < rows.length; i++) {
         const cells = rows[i].c || []
         if (cells.some(c => c && String(c.v||'').trim().toUpperCase() === 'TIENDAS')) { hdrIdx = i; break }
       }
-      if (hdrIdx < 0) { setError('No se encontro la fila TIENDAS en la hoja ' + mesNombre); return }
+      if (hdrIdx < 0) { setError('No se encontro cabecera TIENDAS en hoja ' + mesNombre); return }
 
       const hdrCells = (rows[hdrIdx].c || []).map(c => c ? c.v : null)
-      // Find columns: tienda=col with TIENDAS, dates, etc
-      let colTienda = hdrCells.findIndex(v => String(v||'').trim().toUpperCase() === 'TIENDAS')
-      let lastDateCol = -1
-      for (let j = 0; j < hdrCells.length; j++) {
-        const v = hdrCells[j]
-        if (v instanceof Date || (typeof v === 'string' && v.indexOf('Date(') === 0)) lastDateCol = j
-      }
-      // gviz returns dates as Date(year,month,day) - need last two date cols
+      const colTienda = hdrCells.findIndex(v => String(v||'').trim().toUpperCase() === 'TIENDAS')
+
+      // Find all date columns (gviz returns dates as Date(y,m,d) strings or Date objects)
       const dateCols = []
       for (let j = 0; j < hdrCells.length; j++) {
         const v = hdrCells[j]
-        if (v instanceof Date || (typeof v === 'string' && String(v).indexOf('Date(') >= 0)) dateCols.push(j)
+        if (v && (v instanceof Date || /^Date(/.test(String(v)))) dateCols.push(j)
       }
       const colVentas = dateCols.length > 0 ? dateCols[dateCols.length - 1] : -1
       const colVentaAnt = dateCols.length > 1 ? dateCols[dateCols.length - 2] : -1
 
-      // Find meta col (text containing 'meta' case insensitive)
+      // Find meta col
       let colMeta = -1
       for (let j = 0; j < hdrCells.length; j++) {
         const v = String(hdrCells[j]||'').toLowerCase()
@@ -142,14 +148,20 @@ export default function App() {
         const nombreU = nombre.toUpperCase()
         if (['TIENDAS','TOTAL'].includes(nombreU) || nombreU.includes('META')) continue
 
-        const ventaReal = parseFloat(String((cells[colVentas] ? cells[colVentas].v : 0)||0).replace(/[^0-9.]/g,'')) || 0
-        let ventaAnt = colVentaAnt >= 0 ? (parseFloat(String((cells[colVentaAnt] ? cells[colVentaAnt].v : 0)||0).replace(/[^0-9.]/g,'')) || 0) : 0
+        const parseNum = (cell) => {
+          if (!cell) return 0
+          const v = cell.v
+          if (typeof v === 'number') return v
+          return parseFloat(String(v||'').replace(/[^0-9.-]/g,'')) || 0
+        }
+
+        const ventaReal = parseNum(cells[colVentas])
+        let ventaAnt = colVentaAnt >= 0 ? parseNum(cells[colVentaAnt]) : 0
         if (ventaAnt === 0 && colVentas > 0) {
-          const altCell = cells[colVentas - 1]
-          const altVal = parseFloat(String((altCell ? altCell.v : 0)||0).replace(/[^0-9.]/g,'')) || 0
+          const altVal = parseNum(cells[colVentas - 1])
           if (altVal > 0) ventaAnt = altVal
         }
-        const metaAbs = colMeta >= 0 ? (parseFloat(String((cells[colMeta] ? cells[colMeta].v : 0)||0).replace(/[^0-9.]/g,'')) || 0) : 0
+        const metaAbs = colMeta >= 0 ? parseNum(cells[colMeta]) : 0
 
         if (ventaReal > 0 || ventaAnt > 0 || metaAbs > 0) {
           data[nombreU] = { ventaReal, metaAbs, ventaAnt, nombreOriginal: nombre }
@@ -158,7 +170,7 @@ export default function App() {
       setVentasData(data)
       setError('')
     } catch(err) {
-      setError('Error al cargar Google Sheets: ' + err.message)
+      setError('Error Google Sheets: ' + err.message)
       setVentasFile(null)
     }
   }
@@ -465,19 +477,16 @@ export default function App() {
           <p className="hint">Sube los dos archivos para calcular los bonos automaticamente.</p>
           <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
             <div style={{background:ventasData?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:'2px solid '+(ventasData?'#16A34A':'rgba(79,70,229,0.3)'),borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
-              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
                 <span style={{fontSize:28}}>{ventasData?'&#x2705;':'&#x1f4ca;'}</span>
                 <div>
                   <div style={{fontWeight:700,fontSize:13,color:ventasData?'#166534':'#1e1b4b'}}>1. Ventas mensual</div>
-                  <div style={{fontSize:11,color:'#9CA3AF'}}>Google Sheets &mdash; {ventasData?ventasFile:'Sin cargar'}</div>
+                  <div style={{fontSize:11,color:'#9CA3AF'}}>{ventasData ? ventasFile : 'Cargando...'}</div>
                 </div>
               </div>
-              {!ventasData
-                ? <button onClick={cargarVentasDesdeSheets} style={{background:'#4F46E5',color:'#fff',borderRadius:6,padding:'8px 18px',fontSize:12,cursor:'pointer',border:'none'}}>Cargar desde Google Sheets</button>
-                : <div style={{fontSize:11,color:'#166534'}}>{Object.keys(ventasData).length} tiendas leidas &middot; <span style={{cursor:'pointer',textDecoration:'underline'}} onClick={()=>{setVentasData(null);setVentasFile(null)}}>cambiar</span></div>
-              }
+              {ventasData && <div style={{fontSize:11,color:'#166534'}}>{Object.keys(ventasData).length} tiendas leidas</div>}
             </div>
-            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="Ã°ÂÂÂ" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
+            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="&#x1f4c5;" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
           </div>
 
           {ventasData && (
@@ -565,7 +574,7 @@ export default function App() {
                     const sr = resultados.storeResults[t.id]
                     if (!sr) return null
                     const rv = reviews[t.id]!==''?parseFloat(reviews[t.id]):null
-                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'Ã¢ÂÂ':'-'
+                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'&#x2605;':'-'
                     return (
                       <tr key={t.id}>
                         <td className="bold">{t.nombre}</td>
