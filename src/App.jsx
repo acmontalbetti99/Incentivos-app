@@ -124,7 +124,7 @@ export default function App() {
       const dateCols = []
       for (let j = 0; j < hdrCells.length; j++) {
         const v = hdrCells[j]
-        if (v && (v instanceof Date || /^Date(/.test(String(v)))) dateCols.push(j)
+        if (v && (v instanceof Date || /^Date\(/.test(String(v)))) dateCols.push(j)
       }
       const colVentas = dateCols.length > 0 ? dateCols[dateCols.length - 1] : -1
       const colVentaAnt = dateCols.length > 1 ? dateCols[dateCols.length - 2] : -1
