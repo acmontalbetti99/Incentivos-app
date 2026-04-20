@@ -84,7 +84,7 @@ export default function App() {
     setSyncStatus('Sincronizando...')
     setLoading({ ventas: true, horarios: true })
 
-    // ── Load ventas ──
+    // -- Load ventas --
     try {
       const gdata = await fetchGviz(VENTAS_SHEET_ID, mesNombre)
       const rows = gdata.table.rows || []
@@ -126,7 +126,7 @@ export default function App() {
       setLoading(l => ({...l, ventas: false}))
     }
 
-    // ── Load horarios (sheet "Resumen Mensual") ──
+    // -- Load horarios (sheet "Resumen Mensual") --
     try {
       const gdata = await fetchGviz(HORARIOS_SHEET_ID, 'Resumen Mensual')
       const rows = gdata.table.rows || []
@@ -376,7 +376,7 @@ export default function App() {
       <header className="header">
         <div style={{display:'flex',alignItems:'center',gap:12}}>
           <h1 className="logo">Incentivos tiendas</h1>
-          <span style={{color:'rgba(255,255,255,0.4)'}}>·</span>
+          <span style={{color:'rgba(255,255,255,0.4)'}}>.</span>
           <select value={mes} onChange={e=>setMes(e.target.value)}
             style={{background:'rgba(255,255,255,0.15)',border:'none',borderRadius:8,color:'#fff',fontSize:14,padding:'6px 12px',cursor:'pointer'}}>
             {MESES_ES.map((nm,i) => {
