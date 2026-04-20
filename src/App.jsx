@@ -12,6 +12,8 @@ const BONO_PCT = 0.04
 const BONO_MAX = 500
 const VENTA_MIN = 30000
 const CRECIMIENTO_MIN = 0.01
+const VENTAS_SHEET_ID = '1lQXdKtkh5kdGS52SgJ6w0GiLIzyrHzph'
+const MESES_ES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SETIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE']
 
 const S = {
   input: { background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.2)', borderRadius:6, color:'#fff', fontSize:12, padding:'5px 8px', width:'100%' },
@@ -28,7 +30,7 @@ function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, don
   return (
     <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'✅':icon}</span>
+        <span style={{fontSize:28}}>{done?'â':icon}</span>
         <div>
           <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#1e1b4b'}}>{title}</div>
           <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
@@ -85,54 +87,81 @@ export default function App() {
     setNewTienda(''); setNewEmpleada(''); setConfigMsg(''); setShowConfig(true)
   }
 
-  function parsearVentas(file) {
-    setVentasFile(file.name)
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const wb = XLSX.read(e.target.result, { type:'array', cellDates:true })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
-        let colTienda=1, colVentas=6, colMeta=9, colVentaAnt=4, dataStartRow=1
-        for (let i=0; i<rows.length; i++) {
-          const row=rows[i]||[]
-          for (let j=0; j<row.length; j++) {
-            if (String(row[j]||'').trim().toUpperCase()==='TIENDAS') {
-              colTienda=j; dataStartRow=i+1
-              let lastDate=-1, lastMeta=-1
-              for (let k=j+1; k<row.length; k++) {
-                const cell=row[k]
-                if (cell instanceof Date) lastDate=k
-                if (typeof cell==='string' && cell.toLowerCase().includes('meta') && !cell.toLowerCase().includes('total')) lastMeta=k
-              }
-              if (lastDate>=0) colVentas=lastDate
-              if (lastMeta>=0) colMeta=lastMeta
-              colVentaAnt=colVentas-2>=colTienda+1?colVentas-2:colTienda+4
-              break
-            }
-          }
-          if (dataStartRow>1) break
-        }
-        const data={}
-        for (let i=dataStartRow; i<rows.length; i++) {
-          const row=rows[i]; if(!row) continue
-          const nombre=row[colTienda]
-          if (!nombre || typeof nombre!=='string') continue
-          const nombreU=nombre.trim().toUpperCase()
-          if (['TIENDAS','TOTAL'].includes(nombreU)||nombreU.includes('META TO')||nombreU.includes('META EM')) continue
-          const ventaReal=typeof row[colVentas]==='number'?row[colVentas]:parseFloat(row[colVentas])||0
-          const metaAbs=typeof row[colMeta]==='number'?row[colMeta]:parseFloat(row[colMeta])||0
-          let ventaAnt=typeof row[colVentaAnt]==='number'?row[colVentaAnt]:parseFloat(row[colVentaAnt])||0
-          if(ventaAnt===0){const altAnt=typeof row[colVentas-1]==='number'?row[colVentas-1]:parseFloat(row[colVentas-1])||0;if(altAnt>0)ventaAnt=altAnt}
-          if (ventaReal>0||metaAbs>0||ventaAnt>0) data[nombreU]={ventaReal,metaAbs,ventaAnt,nombreOriginal:nombre.trim()}
-        }
-        setVentasData(data)
-        setError('')
-      } catch(err) { setError('Error al leer ventas: '+err.message) }
-    }
-    reader.readAsArrayBuffer(file)
-  }
+  async function cargarVentasDesdeSheets() {
+    const mesNombre = MESES_ES[parseInt(mes.split('-')[1]) - 1]
+    setVentasFile('Google Sheets: ' + mesNombre)
+    setError('')
+    try {
+      const url = 'https://docs.google.com/spreadsheets/d/' + VENTAS_SHEET_ID + '/gviz/tq?tqx=out:json&sheet=' + encodeURIComponent(mesNombre)
+      const resp = await fetch(url)
+      const text = await resp.text()
+      const clean = text.replace('/*O_o*/\ngoogle.visualization.Query.setResponse(','').replace(');','')
+      const gdata = JSON.parse(clean)
+      const rows = gdata.table.rows
 
+      // Find header row (contains 'TIENDAS')
+      let hdrIdx = -1
+      for (let i = 0; i < rows.length; i++) {
+        const cells = rows[i].c || []
+        if (cells.some(c => c && String(c.v||'').trim().toUpperCase() === 'TIENDAS')) { hdrIdx = i; break }
+      }
+      if (hdrIdx < 0) { setError('No se encontro la fila TIENDAS en la hoja ' + mesNombre); return }
+
+      const hdrCells = (rows[hdrIdx].c || []).map(c => c ? c.v : null)
+      // Find columns: tienda=col with TIENDAS, dates, etc
+      let colTienda = hdrCells.findIndex(v => String(v||'').trim().toUpperCase() === 'TIENDAS')
+      let lastDateCol = -1
+      for (let j = 0; j < hdrCells.length; j++) {
+        const v = hdrCells[j]
+        if (v instanceof Date || (typeof v === 'string' && /^Date(/.test(v))) lastDateCol = j
+      }
+      // gviz returns dates as Date(year,month,day) - need last two date cols
+      const dateCols = []
+      for (let j = 0; j < hdrCells.length; j++) {
+        const v = hdrCells[j]
+        if (v instanceof Date || (typeof v === 'string' && /Date/.test(String(v)))) dateCols.push(j)
+      }
+      const colVentas = dateCols.length > 0 ? dateCols[dateCols.length - 1] : -1
+      const colVentaAnt = dateCols.length > 1 ? dateCols[dateCols.length - 2] : -1
+
+      // Find meta col (text containing 'meta' case insensitive)
+      let colMeta = -1
+      for (let j = 0; j < hdrCells.length; j++) {
+        const v = String(hdrCells[j]||'').toLowerCase()
+        if (v.includes('meta') && !v.includes('total')) { colMeta = j; break }
+      }
+
+      if (colTienda < 0 || colVentas < 0) { setError('No se pudo detectar columnas en hoja ' + mesNombre); return }
+
+      const data = {}
+      for (let i = hdrIdx + 1; i < rows.length; i++) {
+        const cells = rows[i].c || []
+        const nombreCell = cells[colTienda]
+        const nombre = String(nombreCell ? (nombreCell.v || '') : '').trim()
+        if (!nombre) continue
+        const nombreU = nombre.toUpperCase()
+        if (['TIENDAS','TOTAL'].includes(nombreU) || nombreU.includes('META')) continue
+
+        const ventaReal = parseFloat(String((cells[colVentas] ? cells[colVentas].v : 0)||0).replace(/[^0-9.]/g,'')) || 0
+        let ventaAnt = colVentaAnt >= 0 ? (parseFloat(String((cells[colVentaAnt] ? cells[colVentaAnt].v : 0)||0).replace(/[^0-9.]/g,'')) || 0) : 0
+        if (ventaAnt === 0 && colVentas > 0) {
+          const altCell = cells[colVentas - 1]
+          const altVal = parseFloat(String((altCell ? altCell.v : 0)||0).replace(/[^0-9.]/g,'')) || 0
+          if (altVal > 0) ventaAnt = altVal
+        }
+        const metaAbs = colMeta >= 0 ? (parseFloat(String((cells[colMeta] ? cells[colMeta].v : 0)||0).replace(/[^0-9.]/g,'')) || 0) : 0
+
+        if (ventaReal > 0 || ventaAnt > 0 || metaAbs > 0) {
+          data[nombreU] = { ventaReal, metaAbs, ventaAnt, nombreOriginal: nombre }
+        }
+      }
+      setVentasData(data)
+      setError('')
+    } catch(err) {
+      setError('Error al cargar Google Sheets: ' + err.message)
+      setVentasFile(null)
+    }
+  }
   function parsearHorarios(file) {
     setHorariosFile(file.name)
     const reader = new FileReader()
@@ -435,8 +464,20 @@ export default function App() {
           <h3 style={{marginBottom:6}}>Subir archivos del mes {mes}</h3>
           <p className="hint">Sube los dos archivos para calcular los bonos automaticamente.</p>
           <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
-            <UploadCard title="1. Ventas mensual" subtitle="Archivo Excel de ventas por tienda" hint="Col B = tienda  Col G = ventas del mes  Col J = meta" icon="📊" onFile={parsearVentas} fileName={ventasFile} done={!!ventasData} status={ventasData ? ` ${Object.keys(ventasData).length} tiendas leidas` : ''}/>
-            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="📅" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
+            <div style={{background:ventasData?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:'2px solid '+(ventasData?'#16A34A':'rgba(79,70,229,0.3)'),borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                <span style={{fontSize:28}}>{ventasData?'&#x2705;':'&#x1f4ca;'}</span>
+                <div>
+                  <div style={{fontWeight:700,fontSize:13,color:ventasData?'#166534':'#1e1b4b'}}>1. Ventas mensual</div>
+                  <div style={{fontSize:11,color:'#9CA3AF'}}>Google Sheets &mdash; {ventasData?ventasFile:'Sin cargar'}</div>
+                </div>
+              </div>
+              {!ventasData
+                ? <button onClick={cargarVentasDesdeSheets} style={{background:'#4F46E5',color:'#fff',borderRadius:6,padding:'8px 18px',fontSize:12,cursor:'pointer',border:'none'}}>Cargar desde Google Sheets</button>
+                : <div style={{fontSize:11,color:'#166534'}}>{Object.keys(ventasData).length} tiendas leidas &middot; <span style={{cursor:'pointer',textDecoration:'underline'}} onClick={()=>{setVentasData(null);setVentasFile(null)}}>cambiar</span></div>
+              }
+            </div>
+            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="ð" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
           </div>
 
           {ventasData && (
@@ -524,7 +565,7 @@ export default function App() {
                     const sr = resultados.storeResults[t.id]
                     if (!sr) return null
                     const rv = reviews[t.id]!==''?parseFloat(reviews[t.id]):null
-                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'★':'-'
+                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'â':'-'
                     return (
                       <tr key={t.id}>
                         <td className="bold">{t.nombre}</td>
