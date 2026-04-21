@@ -73,8 +73,11 @@ async function syncVentas(db, mes) {
     var nu = n.toUpperCase()
     if (nu === 'TIENDAS' || nu === 'TOTAL' || nu.includes('META')) continue
     var vr = pn(cells[cv])
-    var va = cva >= 0 ? pn(cells[cva]) : 0
-    if (va === 0 && cv > 0) { var alt = pn(cells[cv-1]); if (alt > 0) va = alt }
+    var va = 0
+    for (var dc2 = dateCols.length - 2; dc2 >= 0; dc2--) {
+      var candidate = pn(cells[dateCols[dc2]])
+      if (candidate > 0) { va = candidate; break }
+    }
     var ma = colM >= 0 ? pn(cells[colM]) : 0
     if (vr > 0 || va > 0 || ma > 0) {
       ups.push({ mes: mes, tienda: nu, venta_real: vr, venta_ant: va, meta_abs: ma, nombre_original: n, synced_at: new Date().toISOString() })
