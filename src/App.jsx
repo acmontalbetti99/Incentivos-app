@@ -38,6 +38,8 @@ export default function App() {
     if(ventasData && horariosData && config) setResultados(calcularBonosLocal())
   }, [ventasData, horariosData, config])
 
+  const reviews = {}
+
   async function cargarDeSupabase(m) {
     setLoading(true); setError(''); setVentasData(null); setHorariosData(null); setResultados(null); setSyncInfo(null)
     try {
