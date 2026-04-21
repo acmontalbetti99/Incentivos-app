@@ -112,6 +112,20 @@ async function syncVentas(db, mes) {
       ups.push({ mes: mes, tienda: nu, venta_real: vr, venta_ant: va, meta_abs: ma, nombre_original: n, synced_at: new Date().toISOString() })
     }
   }
+  // Save meta total empresa as special row
+  var metaTotalRow = null
+  for (var mt = 0; mt < rows.length; mt++) {
+    var mc = rows[mt].c || []
+    var label = String(mc[1] ? (mc[1].v||'') : '').toLowerCase()
+    if (label.includes('meta') && label.includes('total')) {
+      var metaVal = pn(mc[2])
+      if (metaVal > 0) {
+        metaTotalRow = { mes: mes, tienda: '_META_TOTAL', venta_real: 0, venta_ant: 0, meta_abs: metaVal, nombre_original: 'Meta total empresa', synced_at: new Date().toISOString() }
+      }
+      break
+    }
+  }
+  if (metaTotalRow) ups.push(metaTotalRow)
   if (ups.length > 0) await db.from('incentivos_ventas').upsert(ups, { onConflict: 'mes,tienda' })
   return ups.length
 }
