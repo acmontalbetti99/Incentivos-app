@@ -1,3 +1,23 @@
+// v5 - auto-sync desde Google Sheets via Supabase
+import { useState, useEffect } from 'react'
+import { supabase, loadConfig } from './lib/supabase'
+import './App.css'
+
+function norm(s) { return String(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'') }
+const BONO_BASE = 20, BONO_PCT = 0.04, BONO_MAX = 500, VENTA_MIN = 30000, CRECIMIENTO_MIN = 0.01
+const MESES_LABELS = [
+  {val:'2026-01',label:'Enero 2026'},{val:'2026-02',label:'Febrero 2026'},
+  {val:'2026-03',label:'Marzo 2026'},{val:'2026-04',label:'Abril 2026'},
+  {val:'2026-05',label:'Mayo 2026'},{val:'2026-06',label:'Junio 2026'},
+  {val:'2026-07',label:'Julio 2026'},{val:'2026-08',label:'Agosto 2026'},
+  {val:'2026-09',label:'Setiembre 2026'},{val:'2026-10',label:'Octubre 2026'},
+  {val:'2026-11',label:'Noviembre 2026'},{val:'2026-12',label:'Diciembre 2026'},
+]
+const S = {
+  input:{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:6,color:'#fff',fontSize:12,padding:'5px 8px',width:'100%'},
+  btnSm:{border:'none',borderRadius:6,fontSize:12,padding:'6px 14px',cursor:'pointer'},
+}
+
 // v3 - tipo badges fix
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
@@ -24,214 +44,47 @@ const S = {
   msg: (ok) => ({ marginTop:8, padding:'7px 12px', background: ok?'rgba(134,239,172,0.12)':'rgba(252,165,165,0.12)', borderRadius:6, color:ok?'#86efac':'#fca5a5', fontSize:12 }),
 }
 
-function UploadCard({ title, subtitle, hint, icon, onFile, status, fileName, done }) {
-  return (
-    <div style={{background:done?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.07)',border:`2px solid ${done?'#16A34A':'rgba(79,70,229,0.3)'}`,borderRadius:12,padding:'1.2rem',flex:1,minWidth:260}}>
-      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontSize:28}}>{done?'✅':icon}</span>
-        <div>
-          <div style={{fontWeight:700,fontSize:13,color:done?'#86efac':'#1e1b4b'}}>{title}</div>
-          <div style={{fontSize:11,color:'#9CA3AF'}}>{subtitle}</div>
-        </div>
-      </div>
-      {hint && <div style={{fontSize:11,color:'#6B7280',marginBottom:10,fontStyle:'italic'}}>{hint}</div>}
-      {done
-        ? <div style={{fontSize:12,color:'#86efac'}}>{fileName}</div>
-        : <label style={{background:'#4F46E5',color:'#fff',borderRadius:6,padding:'8px 18px',fontSize:12,cursor:'pointer',display:'inline-block'}}>
-            Seleccionar archivo
-            <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>{onFile(e.target.files[0]);e.target.value='';}}/>
-          </label>
-      }
-      {status && <div style={{marginTop:8,fontSize:11,color:'#F59E0B'}}>{status}</div>}
-    </div>
-  )
-}
 
-export default function App() {
-  const [mes, setMes] = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` })
+function App() {
+  const hoy = new Date()
+  const mesActual = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')
+  const [mes, setMes] = useState(mesActual)
   const [config, setConfig] = useState(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const [ventasFile, setVentasFile] = useState(null)
-  const [horariosFile, setHorariosFile] = useState(null)
   const [ventasData, setVentasData] = useState(null)
   const [horariosData, setHorariosData] = useState(null)
   const [resultados, setResultados] = useState(null)
-
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [showConfig, setShowConfig] = useState(false)
-  const [configMsg, setConfigMsg] = useState('')
-  const [configMsgOk, setConfigMsgOk] = useState(true)
-  const [editingTiendas, setEditingTiendas] = useState([])
-  const [newTienda, setNewTienda] = useState('')
-  const [editingEmpleadas, setEditingEmpleadas] = useState([])
-  const [newEmpleada, setNewEmpleada] = useState('')
-  const [reviews, setReviews] = useState({})
+  const [syncInfo, setSyncInfo] = useState(null)
 
+  useEffect(() => { loadConfig().then(cfg => { if(cfg) setConfig(cfg) }) }, [])
+  useEffect(() => { if(mes) cargarDeSupabase(mes) }, [mes])
   useEffect(() => {
-    loadConfig().then(cfg => {
-      setConfig(cfg)
-      const rv = {}
-      cfg.tiendas.forEach(t => { rv[t.id] = '' })
-      setReviews(rv)
-    }).catch(e => setError('Error al conectar: '+e.message))
-  }, [])
+    if(ventasData && horariosData && config) setResultados(calcularBonosLocal())
+  }, [ventasData, horariosData, config])
 
-  function setMsg(txt,ok=true){setConfigMsg(txt);setConfigMsgOk(ok)}
-
-  function openConfig() {
-    setEditingTiendas(config?.tiendas?.map(t=>({...t}))||[])
-    setEditingEmpleadas(config?.empleadas?.map(e=>({...e}))||[])
-    setNewTienda(''); setNewEmpleada(''); setConfigMsg(''); setShowConfig(true)
+  async function cargarDeSupabase(m) {
+    setLoading(true); setError(''); setVentasData(null); setHorariosData(null); setResultados(null); setSyncInfo(null)
+    try {
+      const {data:ventas,error:ve} = await supabase.from('incentivos_ventas').select('*').eq('mes',m)
+      if(ve) throw new Error('Ventas: '+ve.message)
+      const {data:horarios,error:he} = await supabase.from('incentivos_horarios').select('*').eq('mes',m)
+      if(he) throw new Error('Horarios: '+he.message)
+      const {data:logs} = await supabase.from('incentivos_sync_log').select('synced_at').eq('mes',m).eq('status','ok').order('synced_at',{ascending:false}).limit(1)
+      if(logs&&logs[0]) setSyncInfo(new Date(logs[0].synced_at).toLocaleString('es-PE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))
+      if(!ventas||ventas.length===0){setError('Sin datos para este mes. El sync corre cada hora en punto.');setLoading(false);return}
+      const vdata={}
+      ventas.forEach(r=>{vdata[r.tienda]={ventaReal:r.venta_real,ventaAnt:r.venta_ant,metaAbs:r.meta_abs,nombreOriginal:r.nombre_original}})
+      setVentasData(vdata)
+      const hdata={}
+      if(horarios) horarios.forEach(r=>{if(!hdata[r.colaboradora])hdata[r.colaboradora]={};hdata[r.colaboradora][r.tienda]=(hdata[r.colaboradora][r.tienda]||0)+r.horas})
+      setHorariosData(hdata)
+    } catch(err){setError(err.message)}
+    setLoading(false)
   }
 
-  function parsearVentas(file) {
-    setVentasFile(file.name)
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const wb = XLSX.read(e.target.result, { type:'array', cellDates:true })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
-        let colTienda=1, colVentas=6, colMeta=9, colVentaAnt=4, dataStartRow=1
-        for (let i=0; i<rows.length; i++) {
-          const row=rows[i]||[]
-          for (let j=0; j<row.length; j++) {
-            if (String(row[j]||'').trim().toUpperCase()==='TIENDAS') {
-              colTienda=j; dataStartRow=i+1
-              let lastDate=-1, lastMeta=-1
-              for (let k=j+1; k<row.length; k++) {
-                const cell=row[k]
-                if (cell instanceof Date) lastDate=k
-                if (typeof cell==='string' && cell.toLowerCase().includes('meta') && !cell.toLowerCase().includes('total')) lastMeta=k
-              }
-              if (lastDate>=0) colVentas=lastDate
-              if (lastMeta>=0) colMeta=lastMeta
-              colVentaAnt=colVentas-2>=colTienda+1?colVentas-2:colTienda+4
-              break
-            }
-          }
-          if (dataStartRow>1) break
-        }
-        const data={}
-        for (let i=dataStartRow; i<rows.length; i++) {
-          const row=rows[i]; if(!row) continue
-          const nombre=row[colTienda]
-          if (!nombre || typeof nombre!=='string') continue
-          const nombreU=nombre.trim().toUpperCase()
-          if (['TIENDAS','TOTAL'].includes(nombreU)||nombreU.includes('META TO')||nombreU.includes('META EM')) continue
-          const ventaReal=typeof row[colVentas]==='number'?row[colVentas]:parseFloat(row[colVentas])||0
-          const metaAbs=typeof row[colMeta]==='number'?row[colMeta]:parseFloat(row[colMeta])||0
-          let ventaAnt=typeof row[colVentaAnt]==='number'?row[colVentaAnt]:parseFloat(row[colVentaAnt])||0
-          if(ventaAnt===0){const altAnt=typeof row[colVentas-1]==='number'?row[colVentas-1]:parseFloat(row[colVentas-1])||0;if(altAnt>0)ventaAnt=altAnt}
-          if (ventaReal>0||metaAbs>0||ventaAnt>0) data[nombreU]={ventaReal,metaAbs,ventaAnt,nombreOriginal:nombre.trim()}
-        }
-        setVentasData(data)
-        setError('')
-      } catch(err) { setError('Error al leer ventas: '+err.message) }
-    }
-    reader.readAsArrayBuffer(file)
-  }
-
-  function parsearHorarios(file) {
-    setHorariosFile(file.name)
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const wb = XLSX.read(e.target.result, { type:'array' })
-        const data = {}
-
-        // Detect format A: sheets named "Dia N"
-        const daySheets = wb.SheetNames.filter(n => /^Dia \d+$/i.test(n.trim()))
-        const isRowPerShift = daySheets.length >= 1
-
-        if (isRowPerShift) {
-          // FORMAT A: each day sheet has rows [Fecha, Colaborador/a, Tienda, Horas, Notas]
-          for (const sheetName of daySheets) {
-            const ws = wb.Sheets[sheetName]
-            const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
-            // Find header row: look for row with "Colaborador" in any cell
-            let hdrIdx = -1
-            for (let i = 0; i < rawRows.length; i++) {
-              const row = rawRows[i] || []
-              if (row.some(c => String(c||'').toLowerCase().includes('colaborador'))) {
-                hdrIdx = i; break
-              }
-            }
-            if (hdrIdx < 0) continue
-            const hdrs = (rawRows[hdrIdx] || []).map(h => norm(String(h||'')))
-            const colColab  = hdrs.findIndex(h => h.includes('colaborador'))
-            const colTienda = hdrs.findIndex(h => h.includes('tienda'))
-            const colHoras  = hdrs.findIndex(h => h.includes('hora'))
-            if (colColab < 0 || colTienda < 0 || colHoras < 0) continue
-
-            for (let i = hdrIdx + 1; i < rawRows.length; i++) {
-              const row = rawRows[i] || []
-              const colab  = String(row[colColab]  || '').trim()
-              const tienda = String(row[colTienda] || '').trim()
-              const horas  = parseFloat(row[colHoras]) || 0
-              if (!colab || !tienda || horas <= 0) continue
-              if (!data[colab]) data[colab] = {}
-              data[colab][tienda] = (data[colab][tienda] || 0) + horas
-            }
-          }
-          setHorariosData(data)
-          setError('')
-        } else {
-          // FORMAT B/C: single sheet legacy (matrix or row-per-shift)
-          const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('resumen') || n.toLowerCase().includes('mensual')) || wb.SheetNames[0]
-          const ws = wb.Sheets[sheetName]
-          const rawRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null })
-          // Detect if it is row-per-shift (has a "Tienda" column) or matrix
-          let hdrIdx = -1
-          for (let i = 0; i < rawRows.length; i++) {
-            const row = rawRows[i] || []
-            if (row.some(c => String(c||'').toLowerCase().includes('colaborador'))) {
-              hdrIdx = i; break
-            }
-          }
-          if (hdrIdx < 0) { setError('No se encontro fila de encabezado en horarios.'); return }
-          const hdrs = (rawRows[hdrIdx] || []).map(h => norm(String(h||'')))
-          const hasTiendaCol = hdrs.some(h => h === 'tienda')
-
-          if (hasTiendaCol) {
-            // Row-per-shift single sheet
-            const colColab  = hdrs.findIndex(h => h.includes('colaborador'))
-            const colTienda = hdrs.findIndex(h => h === 'tienda')
-            const colHoras  = hdrs.findIndex(h => h.includes('hora'))
-            for (let i = hdrIdx + 1; i < rawRows.length; i++) {
-              const row = rawRows[i] || []
-              const colab  = String(row[colColab]  || '').trim()
-              const tienda = String(row[colTienda] || '').trim()
-              const horas  = parseFloat(row[colHoras]) || 0
-              if (!colab || !tienda || horas <= 0) continue
-              if (!data[colab]) data[colab] = {}
-              data[colab][tienda] = (data[colab][tienda] || 0) + horas
-            }
-          } else {
-            // Legacy matrix format
-            const colNames = rawRows[hdrIdx].map(h => String(h||'').trim())
-            for (let i = hdrIdx + 1; i < rawRows.length; i++) {
-              const row = rawRows[i]
-              const nombre = String(row[0]||'').trim()
-              if (!nombre || nombre.toUpperCase().includes('TOTAL')) continue
-              data[nombre] = {}
-              for (let j = 1; j < colNames.length; j++) {
-                const colName = colNames[j]
-                if (!colName || colName.toUpperCase().includes('TOTAL')) continue
-                const h = parseFloat(row[j]) || 0
-                if (h > 0) data[nombre][colName] = h
-              }
-            }
-          }
-          setHorariosData(data)
-          setError('')
-        }
-      } catch(err) { setError('Error al leer horarios: '+err.message) }
-    }
-    reader.readAsArrayBuffer(file)
-  }
-  function calcularBonosLocal() {
+    function calcularBonosLocal() {
     if (!ventasData || !horariosData || !config) return null
     const tiendas = config.tiendas
     const empleadas = config.empleadas
@@ -354,280 +207,120 @@ export default function App() {
     catch(e){setMsg('Error: '+e.message,false)}
   }
 
+
   const fmt = (n) => `S/ ${Math.round(n||0).toLocaleString('es-PE')}`
   const fmtDec = (n) => `S/ ${(n||0).toFixed(2)}`
   const pct = (n) => `${(n*100).toFixed(1)}%`
-  const pctS = (n) => `${(n*100).toFixed(1)}%`
 
-  if (!config) return <div className="loading-screen"><div className="spinner"/><p>{error||'Conectando...'}</p></div>
-
-  const sortedTiendas = config.tiendas.slice().sort((a,b)=>a.nombre.localeCompare(b.nombre))
+  if(!config) return <div className="loading-screen"><div className="spinner"/><p>Conectando...</p></div>
 
   return (
     <div className="app">
-      <div className="topbar">
-        <div className="topbar-left">
-          <span className="topbar-title">Incentivos tiendas</span>
-          <span className="topbar-sep">&middot;</span>
-          <input type="month" value={mes} onChange={e=>setMes(e.target.value)} className="month-input"/>
+      {showConfig && <ConfigPanel config={config} setConfig={setConfig} onClose={()=>setShowConfig(false)} S={S} supabase={supabase} mes={mes}/>}
+
+      <header className="header">
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <h1 className="logo">Incentivos tiendas</h1>
+          <span style={{color:'rgba(255,255,255,0.4)'}}>|</span>
+          <select value={mes} onChange={e=>setMes(e.target.value)}
+            style={{background:'rgba(255,255,255,0.15)',border:'none',borderRadius:8,color:'#fff',fontSize:14,padding:'6px 12px',cursor:'pointer'}}>
+            {MESES_LABELS.map(m=>(
+              <option key={m.val} value={m.val} style={{background:'#3730a3',color:'#fff'}}>{m.label}</option>
+            ))}
+          </select>
+          {syncInfo && <span style={{fontSize:11,color:'rgba(255,255,255,0.5)'}}>Sync: {syncInfo}</span>}
         </div>
-        <button onClick={openConfig} style={{background:'rgba(255,255,255,0.18)',border:'none',borderRadius:6,color:'#fff',fontSize:11,padding:'4px 14px',cursor:'pointer'}}>Config</button>
-      </div>
+        <button onClick={()=>setShowConfig(true)} style={{...S.btnSm,background:'rgba(255,255,255,0.15)',color:'#fff'}}>Config</button>
+      </header>
 
-      {showConfig && (
-        <div style={S.configPanel}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-            <span style={{color:'#fff',fontWeight:600,fontSize:15}}>Configuracion</span>
-            <button onClick={()=>setShowConfig(false)} style={{background:'none',border:'none',color:'#aaa',fontSize:20,cursor:'pointer'}}>x</button>
-          </div>
-          <div style={S.section}>
-            <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:4}}>Locales ({editingTiendas.length})</strong>
-            <p style={{color:'#aaa',fontSize:11,marginBottom:8}}>Deben coincidir con los nombres en el archivo de horarios.</p>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:5,marginBottom:8}}>
-              {editingTiendas.map((t,i)=>(
-                <div key={t.id} style={{display:'flex',gap:4,alignItems:'center'}}>
-                  <input value={t.nombre} style={{...S.input,flex:1}} onChange={e=>setEditingTiendas(prev=>prev.map((x,j)=>j===i?{...x,nombre:e.target.value}:x))}/>
-                  <button onClick={()=>deleteTienda(t)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'5px 8px',flexShrink:0}}>x</button>
+      {error && <div style={{background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:8,padding:'10px 16px',margin:'12px 24px',color:'#7f1d1d',fontSize:13}}>
+        {error} <button onClick={()=>setError('')} style={{float:'right',background:'none',border:'none',cursor:'pointer',color:'#7f1d1d',fontSize:16}}>x</button>
+      </div>}
+
+      {loading && <div style={{textAlign:'center',padding:'48px',color:'#6366f1'}}>
+        <div className="spinner" style={{margin:'0 auto 12px'}}/><p>Cargando datos...</p>
+      </div>}
+
+      {!loading && resultados && (() => {
+        const sortedTiendas = config.tiendas.slice().sort((a,b)=>a.nombre.localeCompare(b.nombre))
+        const metrics = [
+          {label:'Tiendas con bono',value:resultados.tiendasConBono+' / '+resultados.totalTiendas,sub:'alcanzaron meta'},
+          {label:'Total bonos',value:fmt(resultados.totalBonos),sub:'en S/'},
+          {label:'Venta total',value:fmt(resultados.ventaTotal),sub:'vs '+fmt(resultados.ventaAntTotal)+' ant.'},
+          {label:'Crecimiento',value:pct(resultados.crecimientoPromedio),sub:'promedio tiendas'},
+        ]
+        return (
+          <div className="panel">
+            <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16}}>
+              {metrics.map(m=>(
+                <div key={m.label} className="metric-card">
+                  <div className="metric-label">{m.label}</div>
+                  <div className="metric-value">{m.value}</div>
+                  <div className="metric-sub">{m.sub}</div>
                 </div>
               ))}
             </div>
-            <div style={{display:'flex',gap:6,marginBottom:8}}>
-              <input value={newTienda} placeholder="Nuevo local..." style={{...S.input,flex:1}} onChange={e=>setNewTienda(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addTienda()}/>
-              <button onClick={addTienda} style={{...S.btnSm,...S.btnSuccess,flexShrink:0}}>+ Anadir</button>
-            </div>
-            <button onClick={saveTiendas} style={{...S.btnSm,...S.btnPrimary}}>Guardar nombres</button>
-          </div>
-          <div style={S.section}>
-            <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:4}}>Colaboradoras ({editingEmpleadas.length})</strong>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:5,marginBottom:8}}>
-              {editingEmpleadas.map((e)=>(
-                <div key={e.id} style={{display:'flex',gap:4,alignItems:'center'}}>
-                  <span style={{color:'#ccc',fontSize:11,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.nombre}</span>
-                  <button onClick={()=>deleteEmpleada(e)} style={{...S.btnSm,background:'#450a0a',color:'#fca5a5',padding:'3px 7px',flexShrink:0,fontSize:10}}>x</button>
-                </div>
-              ))}
-            </div>
-            <div style={{display:'flex',gap:6}}>
-              <input value={newEmpleada} placeholder="Nueva colaboradora..." style={{...S.input,flex:1}} onChange={e=>setNewEmpleada(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addEmpleada()}/>
-              <button onClick={addEmpleada} style={{...S.btnSm,...S.btnSuccess,flexShrink:0}}>+ Anadir</button>
-            </div>
-          </div>
-          <div>
-            <strong style={{color:'#fff',fontSize:12,display:'block',marginBottom:4}}>Rating Google Reviews por tienda</strong>
-            <p style={{color:'#aaa',fontSize:11,marginBottom:8}}>Mayor a 4.0 = +S/10 | Menor a 4.0 = -S/5 | Sin dato = S/0</p>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
-              {config.tiendas.map(t=>(
-                <div key={t.id} style={{display:'flex',alignItems:'center',gap:6}}>
-                  <span style={{color:'#ccc',fontSize:11,flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.nombre}</span>
-                  <input type="number" min="1" max="5" step="0.1" placeholder="--" value={reviews[t.id]||''} onChange={e=>setReviews(prev=>({...prev,[t.id]:e.target.value}))} style={{...S.input,width:60,textAlign:'center'}}/>
-                </div>
-              ))}
-            </div>
-          </div>
-          {configMsg && <div style={S.msg(configMsgOk)}>{configMsg}</div>}
-        </div>
-      )}
-
-      {error && <div className="error-bar">{error}<button onClick={()=>setError('')}>x</button></div>}
-
-      <div className="panel">
-        <div className="card">
-          <h3 style={{marginBottom:6}}>Subir archivos del mes {mes}</h3>
-          <p className="hint">Sube los dos archivos para calcular los bonos automaticamente.</p>
-          <div style={{display:'flex',gap:16,flexWrap:'wrap',marginTop:12}}>
-            <UploadCard title="1. Ventas mensual" subtitle="Archivo Excel de ventas por tienda" hint="Col B = tienda  Col G = ventas del mes  Col J = meta" icon="📊" onFile={parsearVentas} fileName={ventasFile} done={!!ventasData} status={ventasData ? ` ${Object.keys(ventasData).length} tiendas leidas` : ''}/>
-            <UploadCard title="2. Horarios mensual" subtitle="Excel con horas por colaboradora y tienda" hint="Hoja 'Resumen Mensual'  Col A = colaboradora  Resto = tiendas" icon="📅" onFile={parsearHorarios} fileName={horariosFile} done={!!horariosData} status={horariosData ? ` ${Object.keys(horariosData).length} colaboradoras leidas` : ''}/>
-          </div>
-
-          {ventasData && (
-            <div style={{marginTop:16}}>
-              <div style={{fontSize:12,fontWeight:600,color:'#9FE1CB',marginBottom:8}}>Vista previa ventas por tienda:</div>
-              <div className="ventas-summary">
-                {config.tiendas.map(tienda => {
-                  const match = Object.keys(ventasData).find(k => norm(k) === norm(tienda.nombre))
-                  const d = match ? ventasData[match] : null
-                  const venta = d?.ventaReal || 0
-                  const meta = d?.metaAbs || tienda.meta_actual || (tienda.venta_ant * (1 + (tienda.crec_obj||0.05)))
-                  const p = meta > 0 ? venta / meta : 0
+            <h3 style={{marginBottom:10,fontSize:14,color:'#1e1b4b'}}>Resultados por tienda</h3>
+            <div style={{overflowX:'auto'}}>
+              <table className="results-table">
+                <thead><tr>
+                  <th>Tienda</th><th>Venta real</th><th>Venta ant.</th><th>Crec.</th>
+                  <th>Meta abs.</th><th>Estado</th><th>Bono tienda</th>
+                  <th>Colaboradoras</th><th>Bono x colab.</th>
+                </tr></thead>
+                <tbody>
+                {sortedTiendas.map(tienda => {
+                  const r = resultados.porTienda[tienda.nombre.toUpperCase()]
+                  if(!r) return null
                   return (
-                    <div key={tienda.id} className="tienda-chip">
-                      <div className="tienda-name">{tienda.nombre}</div>
-                      <div className="tienda-total">{fmt(venta)}</div>
-                      <div className={`tienda-pct ${p>=1?'green':p>=0.8?'amber':venta>0?'red':''}`}>{venta>0?`${(p*100).toFixed(0)}%`:''}</div>
-                    </div>
+                    <tr key={tienda.nombre} className={r.alcanzoBono?'row-bono':''}>
+                      <td><strong>{r.nombreOriginal||tienda.nombre}</strong></td>
+                      <td>{fmt(r.ventaReal)}</td>
+                      <td>{fmt(r.ventaAnt)}</td>
+                      <td style={{color:r.crecPct>=0?'#16a34a':'#dc2626'}}>{pct(r.crecPct)}</td>
+                      <td>{r.metaAbs>0?fmt(r.metaAbs):'-'}</td>
+                      <td><span className={'badge '+(r.alcanzoBono?'badge-ok':'badge-no')}>{r.alcanzoBono?'Con bono':'Sin bono'}</span></td>
+                      <td><strong>{r.alcanzoBono?fmt(r.bonoTienda):'-'}</strong></td>
+                      <td>{r.colaboradoras.length>0?r.colaboradoras.length:'-'}</td>
+                      <td>{r.alcanzoBono&&r.colaboradoras.length>0?fmtDec(r.bonoXColab):'-'}</td>
+                    </tr>
                   )
                 })}
-              </div>
+                </tbody>
+              </table>
             </div>
-          )}
-
-          {ventasData && config && (()=>{
-            const sinMatch = Object.keys(ventasData).filter(k => !config.tiendas.find(t => norm(t.nombre) === norm(k)))
-            return sinMatch.length > 0 ? (
-              <div className="info-card amber" style={{marginTop:10}}>
-                Estas tiendas del Excel no coinciden con el sistema: <strong>{sinMatch.join(', ')}</strong><br/>
-                <span style={{fontSize:11}}>Usa Config para ajustar los nombres.</span>
-              </div>
-            ) : null
-          })()}
-
-          {horariosData && config && (()=>{
-            const sinMatch = Object.keys(horariosData).filter(k => !config.empleadas.find(e => norm(e.nombre) === norm(k)))
-            return sinMatch.length > 0 ? (
-              <div className="info-card amber" style={{marginTop:8}}>
-                Estas colaboradoras del Excel no coinciden: <strong>{sinMatch.join(', ')}</strong>
-              </div>
-            ) : null
-          })()}
-
-          <div style={{marginTop:20,display:'flex',justifyContent:'flex-end'}}>
-            <button className="btn primary" style={{fontSize:14,padding:'10px 28px'}} onClick={calcular} disabled={loading || !ventasData || !horariosData}>
-              {loading ? 'Calculando...' : (ventasData && horariosData ? 'Calcular bonos' : 'Sube los dos archivos para continuar')}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {resultados && (
-        <div className="panel">
-          <div style={{background:resultados.empresaAlcanzo?'rgba(22,163,74,0.15)':'rgba(220,38,38,0.18)',border:`1px solid ${resultados.empresaAlcanzo?'#16A34A':'#DC2626'}`,borderRadius:10,padding:'14px 18px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
-            <div>
-              <div style={{fontWeight:700,fontSize:14,color:resultados.empresaAlcanzo?'#166534':'#7f1d1d'}}>
-                {resultados.empresaAlcanzo?'META EMPRESA ALCANZADA':'Meta empresa no alcanzada'}
-              </div>
-              <div style={{fontSize:12,color:resultados.empresaAlcanzo?'#14532d':'#7f1d1d',marginTop:2}}>
-                Ventas totales: <b>{fmt(resultados.totalVentasEmpresa)}</b> &middot; Meta: <b>{fmt(resultados.META_EMPRESA)}</b> &middot; {pct(resultados.pctEmpresaLogrado)}
-              </div>
-            </div>
-            <div style={{textAlign:'right'}}>
-              <div style={{fontSize:11,color:'#aaa'}}>Total bonos a pagar</div>
-              <div style={{fontSize:18,fontWeight:700,color:'#818CF8'}}>{fmt(resultados.resultados.reduce((s,r)=>s+r.total_bono,0))}</div>
-            </div>
-          </div>
-
-          <div className="metrics-row">
-            {[
-              {label:'Total bonos',value:fmt(resultados.resultados.reduce((s,r)=>s+r.total_bono,0))},
-              {label:'Colaboradoras',value:resultados.resultados.length},
-              {label:'Tiendas con bono',value:`${Object.values(resultados.storeResults).filter(s=>s.activaBono).length}/${config.tiendas.length}`},
-              {label:'Cumpl. promedio',value:pct(Object.values(resultados.storeResults).reduce((s,r)=>s+r.cumplimiento,0)/Math.max(config.tiendas.length,1))},
-            ].map(m=><div key={m.label} className="metric-card"><div className="metric-label">{m.label}</div><div className="metric-value">{m.value}</div></div>)}
-          </div>
-
-          <div className="card">
-            <h3>Resultados por tienda</h3>
-            <div className="table-scroll">
-              <table className="res-table">
-                <thead><tr><th>Tienda</th><th>Tipo</th><th>Venta ant.</th><th>Venta act.</th><th>Crec. %</th><th>Crec. S/</th><th>Reviews</th><th style={{color:'#818CF8'}}>Bono base/colab.</th></tr></thead>
-                <tbody>
-                  {sortedTiendas.map(t=>{
-                    const sr = resultados.storeResults[t.id]
-                    if (!sr) return null
-                    const rv = reviews[t.id]!==''?parseFloat(reviews[t.id]):null
-                    const rvLabel = rv!==null&&!isNaN(rv)?rv.toFixed(1)+'★':'-'
-                    return (
-                      <tr key={t.id}>
-                        <td className="bold">{t.nombre}</td>
-                        <td><span style={{fontSize:10,padding:'2px 7px',borderRadius:10,background:t.tipo==='grande'?'#dbeafe':t.tipo==='mediana'?'#dcfce7':'#fee2e2',color:t.tipo==='grande'?'#1e40af':t.tipo==='mediana'?'#15803d':'#b91c1c',fontWeight:600,letterSpacing:'0.02em'}}>{t.tipo||'-'}</span></td>
-                        <td>{fmt(sr.ventaAnt)}</td>
-                        <td>{fmt(sr.ventaReal)}</td>
-                        <td><span className={`badge ${sr.crecPct>=CRECIMIENTO_MIN?'green':'red'}`}>{pctS(sr.crecPct)}</span></td>
-                        <td style={{color:sr.crecSoles>=0?'#86efac':'#fca5a5'}}>{sr.crecSoles>=0?'+':''}{fmt(sr.crecSoles)}</td>
-                        <td style={{textAlign:'center',color:rv&&rv>4?'#86efac':rv&&rv<4?'#fca5a5':'#aaa'}}>{rvLabel}</td>
-                        <td style={{textAlign:'right',color:'#818CF8',fontWeight:600}}>{sr.activaBono?fmtDec(sr.bonoBaseColab):'S/ 0'}</td>
+            {resultados.colaboradorasConBono.length>0&&(
+              <div style={{marginTop:20}}>
+                <h3 style={{marginBottom:10,fontSize:14,color:'#1e1b4b'}}>Detalle por colaboradora</h3>
+                <div style={{overflowX:'auto'}}>
+                  <table className="results-table">
+                    <thead><tr><th>Colaboradora</th><th>Tiendas c/bono</th><th>Horas totales</th><th>Bono estimado</th></tr></thead>
+                    <tbody>
+                    {resultados.colaboradorasConBono.map(col=>(
+                      <tr key={col.nombre}>
+                        <td><strong>{col.nombre}</strong></td>
+                        <td>{col.tiendas.join(', ')}</td>
+                        <td>{col.horas}</td>
+                        <td><strong>{fmtDec(col.bono)}</strong></td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="card">
-            <h3>Horas trabajadas por colaboradora</h3>
-            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>Horas del mes segun archivo de horarios.</div>
-            <div className="table-scroll">
-              <table className="res-table">
-                <thead>
-                  <tr>
-                    <th style={{minWidth:110}}>Colaboradora</th>
-                    {sortedTiendas.map(t=>(
-                      <th key={t.id} style={{width:52,maxWidth:52,padding:'4px 2px',verticalAlign:'bottom',textAlign:'center'}}>
-                        <div style={{writingMode:'vertical-rl',transform:'rotate(180deg)',fontSize:10,fontWeight:600,lineHeight:1.2,maxHeight:80,overflow:'hidden',whiteSpace:'nowrap',color:'#cbd5e1'}}>{t.nombre}</div>
-                      </th>
                     ))}
-                    <th style={{color:'#818CF8',textAlign:'center',minWidth:60}}>Total h.</th>
-                    <th style={{color:'#818CF8',textAlign:'right',minWidth:72}}>Bono ind.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {resultados.resultados.map(r=>(
-                    <tr key={r.empleada_id}>
-                      <td className="bold" style={{fontSize:11}}>{r.nombre}</td>
-                      {sortedTiendas.map(t=>{
-                        const colabKey = Object.keys(horariosData).find(k=>norm(k)===norm(r.nombre))||''
-                        const tiendaKey = Object.keys(horariosData[colabKey]||{}).find(k=>norm(k)===norm(t.nombre))
-                        const h = horariosData[colabKey]?.[tiendaKey]||0
-                        return <td key={t.id} style={{textAlign:'center',fontSize:11,fontWeight:h>0?600:400,color:h>0?'#1e293b':'#94a3b8',background:h>0?'#e0e7ff':'transparent',borderRadius:4,padding:'2px 4px'}}>{h>0?h:'-'}</td>
-                      })}
-                      <td style={{textAlign:'center',fontWeight:700,color:'#818CF8',fontSize:11}}>{r.horas_total}</td>
-                      <td style={{textAlign:'right',fontWeight:700,color:'#818CF8',fontSize:11}}>{fmtDec(r.bono_base)}</td>
-                    </tr>
-                  ))}
-                  <tr className="total-row">
-                    <td style={{fontSize:10}}>TOTAL HORAS</td>
-                    {sortedTiendas.map(t=>{
-                      const tot = resultados.resultados.reduce((s,r)=>{
-                        const colabKey = Object.keys(horariosData).find(k=>norm(k)===norm(r.nombre))||''
-                        const tiendaKey = Object.keys(horariosData[colabKey]||{}).find(k=>norm(k)===norm(t.nombre))
-                        return s + (horariosData[colabKey]?.[tiendaKey]||0)
-                      },0)
-                      return <td key={t.id} style={{textAlign:'center',fontSize:10}}>{tot||'-'}</td>
-                    })}
-                    <td style={{textAlign:'center',fontWeight:700}}>{resultados.resultados.reduce((s,r)=>s+r.horas_total,0)}</td>
-                    <td style={{textAlign:'right',fontWeight:700,color:'#818CF8'}}>{fmtDec(resultados.resultados.reduce((s,r)=>s+r.bono_base,0))}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
+        )
+      })()}
 
-          <div className="card">
-            <h3>Bonos por colaboradora</h3>
-            <div style={{fontSize:11,color:'#9CA3AF',marginBottom:8}}>
-              Formula: S/20 + (4% x crecimiento S/ / num colabs) | Maximo: S/500 | Activa si crec &gt;= 1% y ventas &gt;= S/30,000
-            </div>
-            <div className="table-scroll">
-              <table className="res-table">
-                <thead><tr><th>Colaboradora</th><th>Tiendas</th><th>Horas</th><th style={{color:'#818CF8'}}>Bono base</th><th style={{color:'#34D399'}}>Bono reviews</th><th>TOTAL</th></tr></thead>
-                <tbody>
-                  {resultados.resultados.map(r=>(
-                    <tr key={r.empleada_id}>
-                      <td className="bold">{r.nombre}</td>
-                      <td style={{fontSize:10}}>{r.tiendas.map(t=><span key={t} className="pill">{t}</span>)}</td>
-                      <td style={{textAlign:'center'}}>{r.horas_total}</td>
-                      <td style={{textAlign:'right',color:'#818CF8'}}>{fmtDec(r.bono_base)}</td>
-                      <td style={{textAlign:'right',color:r.bono_reviews>=0?'#34D399':'#fca5a5'}}>{r.bono_reviews!==0?fmtDec(r.bono_reviews):'S/ 0.00'}</td>
-                      <td><strong className="total-bono">{fmtDec(r.total_bono)}</strong></td>
-                    </tr>
-                  ))}
-                  <tr className="total-row">
-                    <td colSpan={3}>TOTAL A PAGAR</td>
-                    <td style={{textAlign:'right',color:'#818CF8'}}>{fmtDec(resultados.resultados.reduce((s,r)=>s+r.bono_base,0))}</td>
-                    <td style={{textAlign:'right',color:'#34D399'}}>{fmtDec(resultados.resultados.reduce((s,r)=>s+r.bono_reviews,0))}</td>
-                    <td><strong>{fmtDec(resultados.resultados.reduce((s,r)=>s+r.total_bono,0))}</strong></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div style={{display:'flex',justifyContent:'flex-end',gap:12,marginTop:8}}>
-            <button className="btn" onClick={()=>setResultados(null)}>Nuevo mes</button>
-            <button className="btn primary" onClick={exportarExcel}>Exportar Excel</button>
-          </div>
+      {!loading && !resultados && !error && (
+        <div style={{textAlign:'center',padding:'48px',color:'#9CA3AF',fontSize:14}}>
+          <p>Sin datos para {MESES_LABELS.find(m=>m.val===mes)?.label}.</p>
+          <p style={{fontSize:12,marginTop:8}}>El sync corre automaticamente cada hora.</p>
         </div>
       )}
     </div>
   )
 }
+
+export default App
