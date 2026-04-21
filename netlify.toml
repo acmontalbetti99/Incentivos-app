@@ -1,8 +1,13 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+[[scheduled_functions]]
+  name = "sync-sheets"
+  cron = "0 * * * *"
