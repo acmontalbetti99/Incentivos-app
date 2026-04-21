@@ -221,20 +221,18 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
-          <h1 className="logo">Incentivos tiendas</h1>
-          <span style={{color:'rgba(255,255,255,0.35)',fontSize:18}}>|</span>
-          <select value={mes} onChange={e => setMes(e.target.value)}
-            style={{background:'rgba(255,255,255,0.15)',border:'none',borderRadius:8,color:'#fff',fontSize:14,padding:'6px 14px',cursor:'pointer'}}>
+      <header className="topbar">
+        <div className="topbar-left">
+          <h1 className="topbar-title">Incentivos tiendas</h1>
+          <span className="topbar-sep">|</span>
+          <select value={mes} onChange={e => setMes(e.target.value)} className="month-input">
             {MESES_LABELS.map(m => (
-              <option key={m.val} value={m.val} style={{background:'#3730a3',color:'#fff'}}>{m.label}</option>
+              <option key={m.val} value={m.val} style={{background:'#4338ca',color:'#fff'}}>{m.label}</option>
             ))}
           </select>
-          {syncInfo && <span style={{fontSize:11,color:'rgba(255,255,255,0.5)'}}>Sync: {syncInfo}</span>}
+          {syncInfo && <span style={{fontSize:11,color:'rgba(255,255,255,0.6)',marginLeft:4}}>Sync: {syncInfo}</span>}
         </div>
-        <button onClick={() => cargarDeSupabase(mes)}
-          style={{background:'rgba(255,255,255,0.15)',border:'none',borderRadius:8,color:'#fff',fontSize:13,padding:'7px 16px',cursor:'pointer'}}>
+        <button onClick={() => cargarDeSupabase(mes)} className="btn">
           &#x1f504; Actualizar
         </button>
       </header>
@@ -262,7 +260,7 @@ export default function App() {
         ]
         return (
           <div className="panel">
-            <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16}}>
+            <div className="metrics-row">
               {metrics.map(m => (
                 <div key={m.label} className="metric-card">
                   <div className="metric-label">{m.label}</div>
@@ -274,7 +272,7 @@ export default function App() {
 
             <h3 style={{marginBottom:10,fontSize:14,color:'#1e1b4b',fontWeight:700}}>Resultados por tienda</h3>
             <div style={{overflowX:'auto'}}>
-              <table className="results-table">
+              <table className="res-table">
                 <thead><tr>
                   <th>Tienda</th><th>Venta real</th><th>Venta ant.</th><th>Crec.</th>
                   <th>Meta abs.</th><th>Estado</th><th>Bono tienda</th>
@@ -306,7 +304,7 @@ export default function App() {
               <div style={{marginTop:24}}>
                 <h3 style={{marginBottom:10,fontSize:14,color:'#1e1b4b',fontWeight:700}}>Detalle por colaboradora</h3>
                 <div style={{overflowX:'auto'}}>
-                  <table className="results-table">
+                  <table className="res-table">
                     <thead><tr>
                       <th>Colaboradora</th><th>Tiendas con bono</th><th>Horas</th><th>Bono estimado</th>
                     </tr></thead>
