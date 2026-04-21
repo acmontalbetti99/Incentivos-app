@@ -51,6 +51,7 @@ export default function App() {
   const [newEmpleada, setNewEmpleada] = useState('')
   const [reviews, setReviews] = useState({})
   const [syncInfo, setSyncInfo] = useState(null)
+  const [metaTotalEmpresa, setMetaTotalEmpresa] = useState(0)
 
   useEffect(() => {
     loadConfig().then(cfg => {
@@ -86,7 +87,10 @@ export default function App() {
       if (logs && logs[0]) setSyncInfo(new Date(logs[0].synced_at).toLocaleString('es-PE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))
       if (!ventas || ventas.length === 0) { setError('Sin datos para este mes. El sync corre cada hora.'); setLoading(false); return }
       const vdata = {}
-      ventas.forEach(r => { vdata[r.tienda] = { ventaReal: r.venta_real, ventaAnt: r.venta_ant, metaAbs: r.meta_abs, nombreOriginal: r.nombre_original } })
+      ventas.forEach(r => {
+        if (r.tienda === '_META_TOTAL') { setMetaTotalEmpresa(r.meta_abs); return }
+        vdata[r.tienda] = { ventaReal: r.venta_real, ventaAnt: r.venta_ant, metaAbs: r.meta_abs, nombreOriginal: r.nombre_original }
+      })
       setVentasData(vdata)
       const hdata = {}
       if (horarios) horarios.forEach(r => {
@@ -162,7 +166,7 @@ export default function App() {
     resultadosColab.sort((a,b) => b.total_bono - a.total_bono)
 
     const totalVentasEmpresa = tiendas.reduce((s,t) => s + (storeResults[t.nombre.toUpperCase()]?.ventaReal||0), 0)
-    const totalMetaEmpresa   = tiendas.reduce((s,t) => s + (storeResults[t.nombre.toUpperCase()]?.metaAbs||0), 0)
+    const totalMetaEmpresa   = metaTotalEmpresa > 0 ? metaTotalEmpresa : tiendas.reduce((s,t) => s + (storeResults[t.nombre.toUpperCase()]?.metaAbs||0), 0)
     const pctEmpresa = totalMetaEmpresa > 0 ? totalVentasEmpresa / totalMetaEmpresa : 0
 
     return { storeResults, resultados: resultadosColab, totalVentasEmpresa, META_EMPRESA: totalMetaEmpresa, pctEmpresaLogrado: pctEmpresa, empresaAlcanzo: pctEmpresa >= 1 }
