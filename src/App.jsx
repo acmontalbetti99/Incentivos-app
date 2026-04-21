@@ -75,70 +75,82 @@ export default function App() {
     setLoading(false)
   }
 
-    function calcularBonosLocal() {
+  function calcularBonosLocal() {
     if (!ventasData || !horariosData || !config) return null
-    const tiendas = config.tiendas
-    const empleadas = config.empleadas
-    const storeResults = {}
-    for (const tienda of tiendas) {
-      const matchKey = Object.keys(ventasData).find(k => norm(k) === norm(tienda.nombre))
-      const vd = matchKey ? ventasData[matchKey] : null
-      const ventaReal = vd?.ventaReal || 0
-      const metaAbs = vd?.metaAbs || tienda.meta_actual || 0
-      const ventaAnt = vd?.ventaAnt || tienda.venta_ant || 0
-      const crecSoles = ventaReal - ventaAnt
-      const crecPct = ventaAnt > 0 ? crecSoles / ventaAnt : 0
-      const cumplimiento = metaAbs > 0 ? ventaReal / metaAbs : 0
-      const esRefugio = norm(tienda.nombre).includes('refugio')
-      const activaBono = esRefugio
-        ? crecPct >= 0.05
-        : ventaReal >= VENTA_MIN && crecPct >= CRECIMIENTO_MIN
-      const horasPorColab = {}
-      for (const [nombreColab, tiendaHoras] of Object.entries(horariosData)) {
-        const matchTienda = Object.keys(tiendaHoras).find(k => norm(k) === norm(tienda.nombre))
-        if (matchTienda && tiendaHoras[matchTienda] > 0) horasPorColab[nombreColab] = tiendaHoras[matchTienda]
-      }
-      const numColabs = Object.keys(horasPorColab).length
-      const reviewRating = reviews[tienda.id] !== '' ? parseFloat(reviews[tienda.id]) : null
-      let bonoReviews = 0
-      if (reviewRating !== null && !isNaN(reviewRating)) {
-        if (reviewRating > 4.0) bonoReviews = 10
-        else if (reviewRating < 4.0) bonoReviews = -5
-      }
-      let bonoBaseColab = 0
-      if (activaBono && numColabs > 0) {
-        bonoBaseColab = BONO_BASE + (BONO_PCT * crecSoles / numColabs)
-        bonoBaseColab = Math.min(bonoBaseColab, BONO_MAX)
-        bonoBaseColab = Math.max(bonoBaseColab, 0)
-      }
-      storeResults[tienda.id] = { tienda, ventaReal, metaAbs, ventaAnt, crecSoles, crecPct, cumplimiento, activaBono, numColabs, bonoBaseColab, bonoReviews, horasPorColab }
-    }
-    const resultadosColab = []
-    for (const empleada of empleadas) {
-      const tiendaHoras = horariosData[Object.keys(horariosData).find(k => norm(k) === norm(empleada.nombre))] || {}
-      const tiendasTrabajadas = []
-      let horasTotal = 0, bonoTotal = 0, bonoRevTotal = 0
-      for (const [tiendaNombre, horas] of Object.entries(tiendaHoras)) {
-        const tiendaMatch = tiendas.find(t => norm(t.nombre) === norm(tiendaNombre))
-        if (!tiendaMatch || horas <= 0) continue
-        const sr = storeResults[tiendaMatch.id]
-        if (!sr) continue
-        horasTotal += horas
-        tiendasTrabajadas.push(tiendaNombre)
-        if (sr.activaBono) { bonoTotal += sr.bonoBaseColab; bonoRevTotal += sr.bonoReviews }
-      }
-      if (horasTotal > 0) {
-        const totalBono = Math.max(0, bonoTotal + bonoRevTotal)
-        resultadosColab.push({ empleada_id: empleada.id, nombre: empleada.nombre, tiendas: tiendasTrabajadas, horas_total: horasTotal, bono_base: bonoTotal, bono_reviews: bonoRevTotal, total_bono: totalBono, bono_individual: bonoTotal, bono_empresa: 0 })
-      }
-    }
-    resultadosColab.sort((a,b) => b.total_bono - a.total_bono)
-    const totalVentasEmpresa = tiendas.reduce((s,t) => s + (storeResults[t.id]?.ventaReal||0), 0)
-    const totalMetaEmpresa = tiendas.reduce((s,t) => s + (storeResults[t.id]?.metaAbs||0), 0)
-    const pctEmpresa = totalMetaEmpresa > 0 ? totalVentasEmpresa / totalMetaEmpresa : 0
-    return { storeResults, resultados: resultadosColab, totalVentasEmpresa, META_EMPRESA: totalMetaEmpresa, pctEmpresaLogrado: pctEmpresa, empresaAlcanzo: pctEmpresa >= 1 }
-  }
+    const esRefugio = (n) => norm(n).includes('refugio')
+    const porTienda = {}
+    let totalBonos = 0, ventaTotal = 0, ventaAntTotal = 0, tiendasConBono = 0
+    const crecPcts = []
 
+    config.tiendas.forEach(function(tienda) {
+      const key = tienda.nombre.toUpperCase()
+      const v = ventasData[key]
+      if (!v) return
+
+      const ventaReal = v.ventaReal || 0
+      const ventaAnt  = v.ventaAnt  || 0
+      const metaAbs   = v.metaAbs   || 0
+      const crecPct   = ventaAnt > 0 ? (ventaReal - ventaAnt) / ventaAnt : 0
+      const tiendaNorm = norm(tienda.nombre)
+
+      const cumpleMeta = metaAbs > 0
+        ? ventaReal >= metaAbs
+        : (esRefugio(tienda.nombre) ? crecPct >= 0.05 : (ventaReal >= VENTA_MIN && crecPct >= CRECIMIENTO_MIN))
+
+      // Colaboradoras que trabajaron en esta tienda
+      const colaboradoras = []
+      let horasTienda = 0
+      Object.keys(horariosData).forEach(function(colab) {
+        const horas = horariosData[colab][tiendaNorm] || 0
+        if (horas > 0) {
+          colaboradoras.push({ nombre: colab, horas: horas })
+          horasTienda += horas
+        }
+      })
+
+      const bonoTienda = cumpleMeta
+        ? Math.min(BONO_BASE + ventaReal * BONO_PCT, BONO_MAX)
+        : 0
+      const bonoXColab = colaboradoras.length > 0 ? bonoTienda / colaboradoras.length : 0
+
+      porTienda[key] = {
+        nombreOriginal: v.nombreOriginal || tienda.nombre,
+        ventaReal, ventaAnt, metaAbs, crecPct,
+        alcanzoBono: cumpleMeta,
+        bonoTienda, bonoXColab,
+        colaboradoras: colaboradoras.map(function(c) { return c.nombre })
+      }
+
+      if (cumpleMeta) { totalBonos += bonoTienda; tiendasConBono++ }
+      ventaTotal    += ventaReal
+      ventaAntTotal += ventaAnt
+      if (ventaAnt > 0) crecPcts.push(crecPct)
+    })
+
+    // Consolidar bonos por colaboradora
+    const bonosPorColab = {}
+    Object.keys(porTienda).forEach(function(key) {
+      const t = porTienda[key]
+      if (!t.alcanzoBono || t.colaboradoras.length === 0) return
+      t.colaboradoras.forEach(function(nombre) {
+        if (!bonosPorColab[nombre]) bonosPorColab[nombre] = { nombre: nombre, tiendas: [], horas: 0, bono: 0 }
+        bonosPorColab[nombre].tiendas.push(t.nombreOriginal)
+        bonosPorColab[nombre].horas += horariosData[nombre] ? (horariosData[nombre][norm(t.nombreOriginal)] || 0) : 0
+        bonosPorColab[nombre].bono  += t.bonoXColab
+      })
+    })
+
+    return {
+      porTienda,
+      totalBonos,
+      ventaTotal,
+      ventaAntTotal,
+      tiendasConBono,
+      totalTiendas: config.tiendas.length,
+      crecimientoPromedio: crecPcts.length > 0 ? crecPcts.reduce(function(a,b){return a+b},0) / crecPcts.length : 0,
+      colaboradorasConBono: Object.values(bonosPorColab)
+    }
+  }
   async function calcular() {
     if (!ventasData || !horariosData) { setError('Sube los dos archivos primero.'); return }
     setLoading(true); setError('')
