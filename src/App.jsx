@@ -76,6 +76,14 @@ export default function App() {
     setNewTienda(''); setNewEmpleada(''); setConfigMsg(''); setShowConfig(true)
   }
 
+  async function actualizarConSync(m) {
+    setLoading(true); setError(''); setSyncInfo(null)
+    try {
+      await fetch('/.netlify/functions/sync-sheets')
+    } catch(e) { /* sync error non-blocking */ }
+    await cargarDeSupabase(m)
+  }
+
   async function cargarDeSupabase(m) {
     setLoading(true); setError(''); setVentasData(null); setHorariosData(null); setResultados(null); setSyncInfo(null)
     try {
