@@ -69,7 +69,7 @@ function getAccessToken(sa) {
 
 function listFolder(token, folderId, nameContains) {
   return new Promise(function(resolve, reject) {
-    var q = encodeURIComponent("'" + folderId + "' in parents and trashed = false and title contains '" + nameContains + "'")
+    var q = encodeURIComponent("'" + folderId + "' in parents and trashed = false and name contains '" + nameContains + "'")
     https.get({
       hostname: 'www.googleapis.com',
       path: '/drive/v3/files?q=' + q + '&fields=files(id,name)',
@@ -84,7 +84,14 @@ function listFolder(token, folderId, nameContains) {
   })
 }
 
+var HORARIOS_KNOWN = {
+  '2026-04': '1UhthKK4MeoIXnLcgldk_NswaRDGWFFUC',
+  '2026-05': '1HwZhrb8aHLjjzjsN6bmMimnmbGdbg7xj'
+}
+
 async function findHorariosFile(mes) {
+  // Check known IDs first (instant, no API call)
+  if (HORARIOS_KNOWN[mes]) return HORARIOS_KNOWN[mes]
   var parts = mes.split('-')
   var yr  = parts[0]
   var mn  = MESES_ES[parseInt(parts[1]) - 1]
