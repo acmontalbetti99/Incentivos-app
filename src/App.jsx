@@ -152,9 +152,9 @@ export default function App() {
     }
 
     const resultadosColab = []
-    for (const empleada of empleadas) {
-      const colabNorm = norm(empleada.nombre)
-      const tiendaHorasObj = horariosData[Object.keys(horariosData).find(k => norm(k) === colabNorm)] || {}
+    // Iterate horariosData keys directly - all collaborators in the schedule appear
+    for (const colabName of Object.keys(horariosData)) {
+      const tiendaHorasObj = horariosData[colabName] || {}
       const tiendasTrabajadas = []
       let horasTotal = 0, bonoTotal = 0, bonoRevTotal = 0
       for (const [tiendaNorm2, horas] of Object.entries(tiendaHorasObj)) {
@@ -167,8 +167,10 @@ export default function App() {
         if (sr.activaBono) { bonoTotal += sr.bonoBaseColab; bonoRevTotal += sr.bonoReviews }
       }
       if (horasTotal > 0) {
+        // Find empleada_id if exists in config, otherwise use name as id
+        const empMatch = empleadas.find(e => norm(e.nombre) === norm(colabName))
         const totalBono = Math.max(0, bonoTotal + bonoRevTotal)
-        resultadosColab.push({ empleada_id: empleada.id, nombre: empleada.nombre, tiendas: tiendasTrabajadas, horas_total: horasTotal, bono_base: bonoTotal, bono_reviews: bonoRevTotal, total_bono: totalBono })
+        resultadosColab.push({ empleada_id: empMatch ? empMatch.id : colabName, nombre: colabName, tiendas: tiendasTrabajadas, horas_total: horasTotal, bono_base: bonoTotal, bono_reviews: bonoRevTotal, total_bono: totalBono })
       }
     }
     resultadosColab.sort((a,b) => b.total_bono - a.total_bono)
