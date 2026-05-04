@@ -79,7 +79,7 @@ export default function App() {
   async function actualizarConSync(m) {
     setLoading(true); setError(''); setSyncInfo(null)
     try {
-      await fetch('/.netlify/functions/sync-sheets')
+      await fetch('/.netlify/functions/sync-sheets?mes=' + m)
     } catch(e) { /* sync error non-blocking */ }
     await cargarDeSupabase(m)
   }
