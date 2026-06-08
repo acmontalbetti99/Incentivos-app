@@ -243,13 +243,13 @@ export default function App() {
 
           <div className="card"><h3>Resultados por tienda</h3>
             <div className="table-scroll"><table className="res-table">
-              <thead><tr><th>Tienda</th><th>Venta ant.</th><th>Venta act.</th><th>Crec. %</th><th>Crec. S/</th><th>Reviews</th><th style={{color:'#818CF8'}}>Bono/colab.</th></tr></thead>
+              <thead><tr><th>Tienda</th><th>Venta ant.</th><th>Venta act.</th><th>Crec. %</th><th>Crec. S/</th><th>Cumpl. meta</th><th>Reviews</th><th style={{color:'#818CF8'}}>Bono/colab.</th></tr></thead>
               <tbody>{sortedTiendas.map(t=>{
                 const sr=resultados.storeResults[t.toUpperCase()]; if(!sr) return null
                 const rv=reviews[t]!==''?parseFloat(reviews[t]):null
                 return(<tr key={t}><td className="bold">{sr.nombreOriginal}</td><td>{fmt(sr.ventaAnt)}</td><td>{fmt(sr.ventaReal)}</td>
                   <td><span className={'badge '+(sr.crecPct>=CRECIMIENTO_MIN?'green':'red')}>{pct(sr.crecPct)}</span></td>
-                  <td style={{color:sr.crecSoles>=0?'#86efac':'#fca5a5'}}>{sr.crecSoles>=0?'+':''}{fmt(sr.crecSoles)}</td>
+                  <td style={{color:sr.crecSoles>=0?'#86efac':'#fca5a5'}}>{sr.crecSoles>=0?'+':''}{fmt(sr.crecSoles)}</td><td style={{textAlign:'center',fontWeight:600,color:sr.metaAbs<=0?'#94a3b8':(sr.cumplimiento>=1?'#16a34a':sr.cumplimiento>=0.9?'#d97706':'#dc2626')}}>{sr.metaAbs>0?pct(sr.cumplimiento):'-'}</td>
                   <td style={{textAlign:'center',color:rv&&rv>4?'#86efac':rv&&rv<4?'#fca5a5':'#aaa'}}>{rv&&!isNaN(rv)?rv.toFixed(1)+'*':'-'}</td>
                   <td style={{textAlign:'right',color:'#818CF8',fontWeight:600}}>{sr.activaBono?fmtDec(sr.bonoBaseColab):'S/ 0'}</td>
                 </tr>)
