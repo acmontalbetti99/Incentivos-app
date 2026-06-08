@@ -34,30 +34,30 @@ async function fetchGviz(sheetId, sheetName) {
 }
 async function leerVentas(mes) {
   const MESES_ABR = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
-  const labelForMes = (m) => { const [yr,mn]=m.split('-'); return MESES_ABR[parseInt(mn)-1]+'-'+yr.slice(2) }
+  const labelMesActual = (m) => { const [yr,mn]=m.split('-'); return MESES_ABR[parseInt(mn)-1]+'-'+yr.slice(2) }
+  const labelAnioAnterior = (m) => { const [yr,mn]=m.split('-'); return MESES_ABR[parseInt(mn)-1]+'-'+String(Number(yr)-1).slice(2) }
   const labelMesAnterior = (m) => { let [yr,mn]=m.split('-').map(Number); let pm=mn-1,py=yr; if(pm<1){pm=12;py=yr-1} return MESES_ABR[pm-1]+'-'+String(py).slice(2) }
   const mn = MESES_ES[parseInt(mes.split('-')[1]) - 1]
   const gdata = await fetchGviz(VENTAS_ID, mn)
   const rows = gdata.table.rows || []
   if (rows.length < 2) return { ventas: {}, metaTotal: 0 }
   const hdr = rows[0].c || []
-  const targetLabel = labelForMes(mes), prevLabel = labelMesAnterior(mes)
-  let colT = -1, colV = -1, colAnt = -1, dateCols = []
+  const lActual = labelMesActual(mes), lAnioAnt = labelAnioAnterior(mes), lMesAnt = labelMesAnterior(mes)
+  let colT = -1, colV = -1, colAnioAnt = -1, colMesAnt = -1, dateCols = []
   for (let j = 0; j < hdr.length; j++) {
     const cell = hdr[j]; if (!cell) continue
     if (typeof cell.v === 'string' && cell.v.trim().toUpperCase() === 'TIENDAS') colT = j
     if (typeof cell.v === 'number' && cell.v > 40000 && cell.v < 50000) {
       dateCols.push(j)
       const f = (cell.f||'').toLowerCase().trim()
-      if (f === targetLabel) colV = j
-      if (f === prevLabel) colAnt = j
+      if (f === lActual) colV = j
+      if (f === lAnioAnt) colAnioAnt = j
+      if (f === lMesAnt) colMesAnt = j
     }
   }
   if (colT < 0) colT = 1
-  // Fallback: si no se encontro la columna del mes por etiqueta, usar la ultima fecha
   if (colV < 0 && dateCols.length > 0) colV = dateCols[dateCols.length-1]
   if (colV < 0) return { ventas: {}, metaTotal: 0 }
-  // Meta: ultima columna numerica grande
   let colMeta = -1
   if (rows[1]) { const dr = rows[1].c||[]; for (let k=dr.length-1; k>=0; k--) { if (pn(dr[k])>10000){colMeta=k;break} } }
   const ventas = {}; let metaTotal = 0
@@ -67,9 +67,12 @@ async function leerVentas(mes) {
     const nu = n.toUpperCase()
     if (nu.includes('META')&&nu.includes('TOTAL')) { metaTotal=pn(cells[2]); continue }
     if (nu==='TIENDAS'||nu==='TOTAL'||nu.includes('META')) continue
+    const esRefugio = norm(n).includes('refugio')
     const vr = colV>=0?pn(cells[colV]):0
-    // Venta anterior: mes calendario anterior, con fallback hacia atras
-    let va = colAnt>=0?pn(cells[colAnt]):0
+    // El Refugio: comparar vs mes anterior. Resto: vs mismo mes del anio anterior.
+    let colComparar = esRefugio ? colMesAnt : colAnioAnt
+    let va = colComparar>=0?pn(cells[colComparar]):0
+    // Fallback: si la columna de comparacion esta vacia, buscar hacia atras
     if (va===0) {
       const colVIdx = dateCols.indexOf(colV)
       for (let dc=colVIdx-1; dc>=0; dc--) { const c2=pn(cells[dateCols[dc]]); if(c2>0){va=c2;break} }
