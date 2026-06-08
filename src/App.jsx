@@ -33,36 +33,53 @@ async function fetchGviz(sheetId, sheetName) {
   return JSON.parse(txt.substring(txt.indexOf('{'), txt.lastIndexOf('}')+1))
 }
 async function leerVentas(mes) {
+  const MESES_ABR = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
+  const labelForMes = (m) => { const [yr,mn]=m.split('-'); return MESES_ABR[parseInt(mn)-1]+'-'+yr.slice(2) }
+  const labelMesAnterior = (m) => { let [yr,mn]=m.split('-').map(Number); let pm=mn-1,py=yr; if(pm<1){pm=12;py=yr-1} return MESES_ABR[pm-1]+'-'+String(py).slice(2) }
   const mn = MESES_ES[parseInt(mes.split('-')[1]) - 1]
   const gdata = await fetchGviz(VENTAS_ID, mn)
   const rows = gdata.table.rows || []
   if (rows.length < 2) return { ventas: {}, metaTotal: 0 }
   const hdr = rows[0].c || []
-  let colT = -1, dateCols = [], colMeta = -1
+  const targetLabel = labelForMes(mes), prevLabel = labelMesAnterior(mes)
+  let colT = -1, colV = -1, colAnt = -1, dateCols = []
   for (let j = 0; j < hdr.length; j++) {
-    const cell = hdr[j]; if (!cell || cell.v === null) continue
+    const cell = hdr[j]; if (!cell) continue
     if (typeof cell.v === 'string' && cell.v.trim().toUpperCase() === 'TIENDAS') colT = j
-    if (typeof cell.v === 'number' && cell.v > 40000 && cell.v < 50000) dateCols.push(j)
+    if (typeof cell.v === 'number' && cell.v > 40000 && cell.v < 50000) {
+      dateCols.push(j)
+      const f = (cell.f||'').toLowerCase().trim()
+      if (f === targetLabel) colV = j
+      if (f === prevLabel) colAnt = j
+    }
   }
   if (colT < 0) colT = 1
-  const colV = dateCols.length > 0 ? dateCols[dateCols.length-1] : -1
+  // Fallback: si no se encontro la columna del mes por etiqueta, usar la ultima fecha
+  if (colV < 0 && dateCols.length > 0) colV = dateCols[dateCols.length-1]
   if (colV < 0) return { ventas: {}, metaTotal: 0 }
-  if (rows[1]) { const dr = rows[1].c||[]; for (let k=dr.length-1; k>=colV+1; k--) { if (pn(dr[k])>10000){colMeta=k;break} } }
+  // Meta: ultima columna numerica grande
+  let colMeta = -1
+  if (rows[1]) { const dr = rows[1].c||[]; for (let k=dr.length-1; k>=0; k--) { if (pn(dr[k])>10000){colMeta=k;break} } }
   const ventas = {}; let metaTotal = 0
   for (let i = 1; i < rows.length; i++) {
     const cells = rows[i].c || []
     const n = String(cells[colT]?(cells[colT].v||''):'').trim(); if (!n) continue
     const nu = n.toUpperCase()
-    if (nu==='TIENDAS'||nu==='TOTAL') continue
     if (nu.includes('META')&&nu.includes('TOTAL')) { metaTotal=pn(cells[2]); continue }
-    if (nu.includes('META')) continue
-    const vr = pn(cells[colV]); let va = 0
-    for (let dc=dateCols.length-2; dc>=0; dc--) { const c2=pn(cells[dateCols[dc]]); if(c2>0){va=c2;break} }
+    if (nu==='TIENDAS'||nu==='TOTAL'||nu.includes('META')) continue
+    const vr = colV>=0?pn(cells[colV]):0
+    // Venta anterior: mes calendario anterior, con fallback hacia atras
+    let va = colAnt>=0?pn(cells[colAnt]):0
+    if (va===0) {
+      const colVIdx = dateCols.indexOf(colV)
+      for (let dc=colVIdx-1; dc>=0; dc--) { const c2=pn(cells[dateCols[dc]]); if(c2>0){va=c2;break} }
+    }
     const ma = colMeta>=0?pn(cells[colMeta]):0
     if (vr>0||va>0||ma>0) ventas[nu] = { ventaReal:vr, ventaAnt:va, metaAbs:ma, nombreOriginal:n }
   }
   return { ventas, metaTotal }
 }
+
 async function leerHorarios(mes) {
   const fileId = HORARIOS_IDS[mes]; if (!fileId) return {}
   const gdata = await fetchGviz(fileId, 'Resumen Mensual')
