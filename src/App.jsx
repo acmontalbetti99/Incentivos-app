@@ -145,7 +145,7 @@ export default function App() {
       const numColabs=Object.keys(horasPorColab).length
       const rv=revs[tienda]!==''?parseFloat(revs[tienda]):null
       let bonoReviews=0; if(rv!==null&&!isNaN(rv)){if(rv>4.0)bonoReviews=10;else if(rv<4.0)bonoReviews=-5}
-      let bonoBaseColab=0; if(activaBono&&numColabs>0) bonoBaseColab=Math.min(Math.max(BONO_BASE+(BONO_PCT*crecSoles/numColabs),0),BONO_MAX)
+      let bonoBaseColab = 0; if (activaBono && numColabs > 0) { bonoBaseColab = BONO_BASE; if (crecPct >= 0.05) bonoBaseColab += Math.min((BONO_PCT * crecSoles / numColabs), BONO_MAX - BONO_BASE); bonoBaseColab = Math.min(Math.max(bonoBaseColab, 0), BONO_MAX); }
       storeResults[key]={tienda,ventaReal,metaAbs,ventaAnt,crecSoles,crecPct,cumplimiento,activaBono,numColabs,bonoBaseColab,bonoReviews,horasPorColab,nombreOriginal:vd?.nombreOriginal||tienda}
     }
     const resultadosColab = []
