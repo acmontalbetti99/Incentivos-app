@@ -5,10 +5,18 @@ import './App.css'
 
 const VENTAS_ID    = '1lQXdKtkh5kdGS52SgJ6w0GiLIzyrHzph'
 const HORARIOS_IDS = {
+  '2026-01': '13Zd2Xbc3_LasaJ9e6K2KldMfxBht3zb0',
+  '2026-02': '1E2dkNh5TfapOmcXvJT96LXS-bp2h9cug',
+  '2026-03': '1T9eEP2Cy0Y1_TiqEMv56EQglkWaCVgp6',
   '2026-04': '1UhthKK4MeoIXnLcgldk_NswaRDGWFFUC',
   '2026-05': '1HwZhrb8aHLjjzjsN6bmMimnmbGdbg7xj',
   '2026-06': '153usTY4Obf_hnR09444vaSEbrDpRRT7n',
-  '2026-07': '1Q2bnmY4hUQeiV_-pHiHMPUB5l9fkz-NQ'
+  '2026-07': '1Q2bnmY4hUQeiV_-pHiHMPUB5l9fkz-NQ',
+  '2026-08': '1x-RI9ACbQ-c8OMfJQCeT9RHmygHJ1JiR',
+  '2026-09': '1gQCFOsLweJ-MNzRB158pEqmlelfqVlgp',
+  '2026-10': '1XAfS3-7gV-MCAdpamCOf_CuRNGuOcvs3',
+  '2026-11': '1fi7p91JTEFHjtnkDNY91OCsRk8EyArJh',
+  '2026-12': '1UFY6aVokeyLGgwA_QRgr5TQQJvEsPPCb'
 }
 const MESES_ES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SETIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE']
 const MESES_LABELS = [
