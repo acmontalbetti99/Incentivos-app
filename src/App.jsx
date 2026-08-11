@@ -7,7 +7,8 @@ const VENTAS_ID    = '1lQXdKtkh5kdGS52SgJ6w0GiLIzyrHzph'
 const HORARIOS_IDS = {
   '2026-04': '1UhthKK4MeoIXnLcgldk_NswaRDGWFFUC',
   '2026-05': '1HwZhrb8aHLjjzjsN6bmMimnmbGdbg7xj',
-  '2026-06': '153usTY4Obf_hnR09444vaSEbrDpRRT7n'
+  '2026-06': '153usTY4Obf_hnR09444vaSEbrDpRRT7n',
+  '2026-07': '1Q2bnmY4hUQeiV_-pHiHMPUB5l9fkz-NQ'
 }
 const MESES_ES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SETIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE']
 const MESES_LABELS = [
